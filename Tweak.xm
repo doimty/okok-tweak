@@ -3,13 +3,31 @@
 #import <objc/message.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
-// “我的”页 refreshUI/checkIfVip 读取的是 +0x39 的 BOOL，不是 isVip 的 +0x8。
-// 这里直接写该 ivar，再走原逻辑。
+// 1.0.3 证明 isVip 能让昵称变金色；会员卡片由 checkIfVip/refreshUI 单独控制。
+// 这里不再猜 +0x39 的语义，直接在原逻辑之后纠正两个容器视图。
 
 static void OKOKMark(NSString *name) {
     NSString *path = [@"/var/mobile/Library/Caches" stringByAppendingPathComponent:name];
     [[NSString stringWithFormat:@"%@ pid=%d", [NSDate date], getpid()]
         writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+static void OKOKApplyVipUI(id self) {
+    @try {
+        UIView *noVip = [self valueForKey:@"kNoVipContentView"];
+        UIView *vip = [self valueForKey:@"kVipContentView"];
+        UILabel *timeLab = [self valueForKey:@"kVipTimeLab"];
+        if ([noVip isKindOfClass:[UIView class]]) {
+            [noVip setHidden:YES];
+        }
+        if ([vip isKindOfClass:[UIView class]]) {
+            [vip setHidden:NO];
+        }
+        if ([timeLab isKindOfClass:[UILabel class]]) {
+            [timeLab setText:@"2099-12-31 到期"];
+        }
+    } @catch (NSException *e) {
+    }
 }
 
 %ctor {
@@ -55,18 +73,15 @@ static void OKOKMark(NSString *name) {
 }
 
 - (void)checkIfVip {
-    OKOKMark(@"okok_checkifvip.txt");
-    void *base = (__bridge void *)self;
-    *(BOOL *)((char *)base + 0x39) = YES;
     %orig;
+    OKOKApplyVipUI(self);
 }
 
 - (void)refreshUI {
-    OKOKMark(@"okok_refreshui.txt");
-    void *base = (__bridge void *)self;
-    *(BOOL *)((char *)base + 0x39) = YES;
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(self, @selector(setIsVip:), YES);
     ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setVipExpirationTime:), @"2099-12-31");
     %orig;
+    OKOKApplyVipUI(self);
 }
 
 %end
