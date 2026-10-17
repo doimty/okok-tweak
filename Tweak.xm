@@ -56,13 +56,15 @@ static void OKOKMark(NSString *name) {
 
 - (void)checkIfVip {
     OKOKMark(@"okok_checkifvip.txt");
-    *(BOOL *)((char *)self + 0x39) = YES;
+    void *base = (__bridge void *)self;
+    *(BOOL *)((char *)base + 0x39) = YES;
     %orig;
 }
 
 - (void)refreshUI {
     OKOKMark(@"okok_refreshui.txt");
-    *(BOOL *)((char *)self + 0x39) = YES;
+    void *base = (__bridge void *)self;
+    *(BOOL *)((char *)base + 0x39) = YES;
     ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setVipExpirationTime:), @"2099-12-31");
     %orig;
 }
