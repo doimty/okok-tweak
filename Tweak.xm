@@ -3,7 +3,18 @@
 #import <objc/message.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
-// 会员状态：isVip + 到期时间，覆盖“我的”页与会员页。
+// “我的”页 refreshUI/checkIfVip 读取的是 +0x39 的 BOOL，不是 isVip 的 +0x8。
+// 这里直接写该 ivar，再走原逻辑。
+
+static void OKOKMark(NSString *name) {
+    NSString *path = [@"/var/mobile/Library/Caches" stringByAppendingPathComponent:name];
+    [[NSString stringWithFormat:@"%@ pid=%d", [NSDate date], getpid()]
+        writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+%ctor {
+    OKOKMark(@"okok_tweak_loaded.txt");
+}
 
 #pragma mark - 会员业务层
 
@@ -43,8 +54,15 @@
     return @"2099-12-31";
 }
 
+- (void)checkIfVip {
+    OKOKMark(@"okok_checkifvip.txt");
+    *(BOOL *)((char *)self + 0x39) = YES;
+    %orig;
+}
+
 - (void)refreshUI {
-    ((void (*)(id, SEL, BOOL))objc_msgSend)(self, @selector(setIsVip:), YES);
+    OKOKMark(@"okok_refreshui.txt");
+    *(BOOL *)((char *)self + 0x39) = YES;
     ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setVipExpirationTime:), @"2099-12-31");
     %orig;
 }
