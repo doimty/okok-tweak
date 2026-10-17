@@ -39,10 +39,12 @@ static void OKOKApplyVipUI(id self) {
 
 - (void)showAdWithConfig {
     OKOKMark(@"okok_block_splash.txt");
+    [self closeAd];
 }
 
 - (void)showAd_Taku {
     OKOKMark(@"okok_block_splash.txt");
+    [self closeAd];
 }
 
 %end
