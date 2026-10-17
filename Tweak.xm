@@ -39,12 +39,16 @@ static void OKOKApplyVipUI(id self) {
 
 - (void)showAdWithConfig {
     OKOKMark(@"okok_block_splash.txt");
-    ((void (*)(id, SEL))objc_msgSend)(self, @selector(closeAd));
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ((void (*)(id, SEL))objc_msgSend)(self, @selector(closeAd));
+    });
 }
 
 - (void)showAd_Taku {
     OKOKMark(@"okok_block_splash.txt");
-    ((void (*)(id, SEL))objc_msgSend)(self, @selector(closeAd));
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ((void (*)(id, SEL))objc_msgSend)(self, @selector(closeAd));
+    });
 }
 
 %end
