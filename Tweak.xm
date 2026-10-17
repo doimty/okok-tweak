@@ -3,8 +3,7 @@
 #import <objc/message.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
-// 会员部分已在 1.0.6 验证。
-// 广告只拦“展示”，不碰 initAllAD/initTakuSDK/startLoadShowAd，避免启动等待回调。
+// 会员已验证；广告按广告位分层拦截，不碰 SDK 初始化。
 
 static void OKOKMark(NSString *name) {
     NSString *path = [@"/var/mobile/Library/Caches" stringByAppendingPathComponent:name];
@@ -48,7 +47,17 @@ static void OKOKApplyVipUI(id self) {
 
 %end
 
-#pragma mark - 全屏 / 激励视频：只拦展示
+#pragma mark - 摇一摇
+
+%hook AdGainShakeHandler
+
+- (void)start {}
+- (void)startSensor {}
+- (void)startWithPriority:(double)priority {}
+
+%end
+
+#pragma mark - 全屏 / 激励视频
 
 %hook ShowFullScreenVideoAdManager
 
@@ -66,6 +75,20 @@ static void OKOKApplyVipUI(id self) {
 %hook AdGainRewardAd
 
 - (void)showAdFromViewController:(id)controller {}
+
+%end
+
+#pragma mark - Banner / 原生广告
+
+%hook AdGainBannerView
+
+- (void)loadAd {}
+
+%end
+
+%hook AdGainNativeAd
+
+- (void)loadAd {}
 
 %end
 
