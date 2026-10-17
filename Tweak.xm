@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
 // 会员状态：isVip + 到期时间，覆盖“我的”页与会员页。
@@ -43,8 +44,8 @@
 }
 
 - (void)refreshUI {
-    [self setIsVip:YES];
-    [self setVipExpirationTime:@"2099-12-31"];
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(self, @selector(setIsVip:), YES);
+    ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setVipExpirationTime:), @"2099-12-31");
     %orig;
 }
 
@@ -63,7 +64,7 @@
 }
 
 - (void)updateDataView {
-    [self setIsVip:YES];
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(self, @selector(setIsVip:), YES);
     %orig;
 }
 
