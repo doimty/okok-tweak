@@ -3,8 +3,8 @@
 #import <objc/message.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
-// 1.0.3 证明 isVip 能让昵称变金色；会员卡片由 checkIfVip/refreshUI 单独控制。
-// 这里不再猜 +0x39 的语义，直接在原逻辑之后纠正两个容器视图。
+// 会员部分已在 1.0.6 验证。
+// 广告只拦“展示”，不碰 initAllAD/initTakuSDK/startLoadShowAd，避免启动等待回调。
 
 static void OKOKMark(NSString *name) {
     NSString *path = [@"/var/mobile/Library/Caches" stringByAppendingPathComponent:name];
@@ -33,6 +33,41 @@ static void OKOKApplyVipUI(id self) {
 %ctor {
     OKOKMark(@"okok_tweak_loaded.txt");
 }
+
+#pragma mark - 开屏广告：只拦展示
+
+%hook OKKYSplashAdManager
+
+- (void)showAdWithConfig {
+    OKOKMark(@"okok_block_splash.txt");
+}
+
+- (void)showAd_Taku {
+    OKOKMark(@"okok_block_splash.txt");
+}
+
+%end
+
+#pragma mark - 全屏 / 激励视频：只拦展示
+
+%hook ShowFullScreenVideoAdManager
+
+- (void)showAd_BUS {}
+- (void)showAd_QQ {}
+
+%end
+
+%hook AdGainInterstitialAd
+
+- (void)showAdFromViewController:(id)controller {}
+
+%end
+
+%hook AdGainRewardAd
+
+- (void)showAdFromViewController:(id)controller {}
+
+%end
 
 #pragma mark - 会员业务层
 
