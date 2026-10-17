@@ -53,6 +53,26 @@ static void OKOKApplyVipUI(id self) {
 
 %end
 
+#pragma mark - 广告位配置：直接回调空配置
+
+%hook AdGainAdSettingManager
+
+- (void)getAdSettingWithCodeId:(id)codeId completion:(id)completion {
+    OKOKMark(@"okok_block_adconfig.txt");
+    if (completion) {
+        ((void (^)(id, id))completion)(nil, nil);
+    }
+}
+
+- (void)getAdSettingWithCodeId:(id)codeId sHash:(id)sHash completion:(id)completion {
+    OKOKMark(@"okok_block_adconfig.txt");
+    if (completion) {
+        ((void (^)(id, id))completion)(nil, nil);
+    }
+}
+
+%end
+
 #pragma mark - 摇一摇
 
 %hook AdGainShakeHandler
