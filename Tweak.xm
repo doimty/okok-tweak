@@ -104,6 +104,25 @@ static void OKOKApplyVipUI(id self) {
 
 %end
 
+#pragma mark - 首页营销轮播：模拟点叉关闭
+
+%hook OKKYADHomeCell
+
+- (void)handleDataArr:(id)arr {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @try {
+            id btn = ((id (*)(id, SEL))objc_msgSend)(self, NSSelectorFromString(@"kCloseBtn"));
+            if (!btn) { return; }
+            ((void (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"kCloseBtnClick:"), btn);
+            OKOKMark(@"okok_close_home_banner.txt");
+        } @catch (NSException *e) {
+        }
+    });
+}
+
+%end
+
 #pragma mark - Banner / 原生广告
 
 %hook AdGainBannerView
