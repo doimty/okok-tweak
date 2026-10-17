@@ -2,9 +2,9 @@
 #import <UIKit/UIKit.h>
 
 // OKOK (com.chipsea.btWeigh) 3.7.54
-// 第一步只验证会员 hook 不影响启动；广告 hook 随后分组加入。
+// 会员状态：isVip + 到期时间，覆盖“我的”页与会员页。
 
-#pragma mark - 会员状态
+#pragma mark - 会员业务层
 
 %hook VIPBusiness
 
@@ -22,13 +22,15 @@
 
 %end
 
-%hook OKKYVIPVC
+%hook AppPayManager
 
-- (BOOL)isVip {
+- (BOOL)verifyVip {
     return YES;
 }
 
 %end
+
+#pragma mark - 我的页面
 
 %hook OKOKKYMyViewController2
 
@@ -36,12 +38,33 @@
     return YES;
 }
 
+- (NSString *)vipExpirationTime {
+    return @"2099-12-31";
+}
+
+- (void)refreshUI {
+    [self setIsVip:YES];
+    [self setVipExpirationTime:@"2099-12-31"];
+    %orig;
+}
+
 %end
 
-%hook AppPayManager
+#pragma mark - 会员页
 
-- (BOOL)verifyVip {
+%hook OKKYVIPVC
+
+- (BOOL)isVip {
     return YES;
+}
+
+- (NSString *)expirationTime {
+    return @"2099-12-31";
+}
+
+- (void)updateDataView {
+    [self setIsVip:YES];
+    %orig;
 }
 
 %end
