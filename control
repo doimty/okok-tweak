@@ -1,6 +1,6 @@
 Package: com.doimty.okokadfree
 Name: OKOK 去广告与会员
-Version: 1.0.0
+Version: 1.0.1
 Architecture: iphoneos-arm64
 Description: 移除 OKOK 广告加载并解锁本地会员状态
 Maintainer: doimty
