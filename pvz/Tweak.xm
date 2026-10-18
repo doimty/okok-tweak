@@ -46,3 +46,24 @@ static void PVZCloseAfter(UIViewController *vc, double delay) {
 }
 
 %end
+
+// 直接跳过 GluAds 的展示调用（按需保留兜底自动关闭）
+%hook GluAdsManager
+- (void)show:(id)type placement:(id)placement extra:(id)extra {
+}
+%end
+
+%hook GluAdsAdvertisingRouter
+- (void)show:(id)type placement:(id)placement extra:(id)extra {
+}
+%end
+
+%hook GluAdsProxy
+- (void)show:(id)type placement:(id)placement extra:(id)extra {
+}
+%end
+
+%hook GluAdsQueuingAdvertising
+- (void)show:(id)type placement:(id)placement extra:(id)extra {
+}
+%end
