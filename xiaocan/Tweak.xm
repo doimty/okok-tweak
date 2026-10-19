@@ -71,9 +71,13 @@ static BOOL gHomeGateCalled;
 
 static BOOL XCHasSplashWindow(void) {
     if (gSplashWindow && XCIsSplashAdWindow(gSplashWindow)) return YES;
+
     UIApplication *app = [UIApplication sharedApplication];
-    for (UIWindow *window in app.windows) {
-        if (XCIsSplashAdWindow(window)) return YES;
+    for (UIScene *scene in app.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (XCIsSplashAdWindow(window)) return YES;
+        }
     }
     return NO;
 }
