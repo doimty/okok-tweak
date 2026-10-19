@@ -118,11 +118,11 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
 
     Method loadM = class_getInstanceMethod(cls, sel_registerName("splashAdLoadSuccess:"));
     if (loadM) {
-        xc_origLoadSuccess = (void *)method_setImplementation(loadM, (IMP)xc_loadSuccess);
+        xc_origLoadSuccess = (void (*)(id, SEL, id))method_setImplementation(loadM, (IMP)xc_loadSuccess);
     }
     Method showM = class_getInstanceMethod(cls, sel_registerName("splashAdWillShow:"));
     if (showM) {
-        xc_origWillShow = (void *)method_setImplementation(showM, (IMP)xc_willShow);
+        xc_origWillShow = (void (*)(id, SEL, id))method_setImplementation(showM, (IMP)xc_willShow);
     }
 }
 
