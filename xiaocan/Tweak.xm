@@ -1,12 +1,13 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import <dispatch/dispatch.h>
+#import "XCLaunchPolicy.h"
 
-// 小蚕 3.21.6 的开屏 SDK 会轮换；已观察到的开屏都使用约 2001 层窗口。
-// 持续将该窗口透明化，但保留原显示调用，让 SDK 自身状态机继续运行。
-// App 级 HomeSplashPopupGate 是实验性统一结束入口，只在真实高层开屏窗口存在时调用。
-// BU/GDT 仍保留各自已经实测过的关闭回调。
+// Preserve SDK presentation state, but keep known high-level splash windows clear.
+// 1.0.8 selects LaunchUtil's native ignoreSplashAd branch at initialization.
+// It does not call HomeSplashPopupGate or invoke raw Swift function addresses.
 static BOOL XCIsSplashAdWindow(UIWindow *window) {
     if (!window) return NO;
     CGFloat level = window.windowLevel;
@@ -66,43 +67,31 @@ static void xc_willShow(id self, SEL cmd, id ad) {
     });
 }
 
-static __weak id gHomeSplashGate;
-static BOOL gHomeGateCalled;
+static Class gLaunchUtilClass;
+static ptrdiff_t gIgnoreSplashOffset;
+static ptrdiff_t gLaunchViewOffset;
 
-static BOOL XCHasSplashWindow(void) {
-    if (gSplashWindow && XCIsSplashAdWindow(gSplashWindow)) return YES;
-
-    UIApplication *app = [UIApplication sharedApplication];
-    for (UIScene *scene in app.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-            if (XCIsSplashAdWindow(window)) return YES;
-        }
-    }
-    return NO;
+static void XCEnableNativeLaunchSkip(id instance) {
+    if (!instance || object_getClass(instance) != gLaunchUtilClass) return;
+    BOOL applied = XCSetNativeSplashIgnore((__bridge void *)instance,
+                                          class_getInstanceSize(gLaunchUtilClass),
+                                          gIgnoreSplashOffset, gLaunchViewOffset);
+    NSLog(@"[XiaocanAdFree 1.0.8] LaunchUtil native ignore %@",
+          applied ? @"applied" : @"rejected");
 }
 
-static void XCInvokeHomeSplashGate(id gate) {
-    if (!gate || gHomeGateCalled || !XCHasSplashWindow()) return;
+// Use only the App's real instance, after its initializer has cleared fields.
+%group XCNativeLaunchSkip
+%hook XCLaunchUtil
 
-    SEL selector = sel_registerName("handleAdClosed");
-    if (![gate respondsToSelector:selector]) return;
-
-    gHomeGateCalled = YES;
-    ((void (*)(id, SEL))objc_msgSend)(gate, selector);
+- (id)init {
+    id instance = %orig;
+    XCEnableNativeLaunchSkip(instance);
+    return instance;
 }
 
-static id (*xc_origGateInit)(id, SEL);
-static id xc_gateInit(id self, SEL cmd) {
-    id gate = xc_origGateInit ? xc_origGateInit(self, cmd) : self;
-    if (gate) {
-        gHomeSplashGate = gate;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            XCInvokeHomeSplashGate(gate);
-        });
-    }
-    return gate;
-}
+%end
+%end
 
 static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
     Class cls = objc_getClass("_TtC9XiaoCanAd10AdSplashBU");
@@ -115,12 +104,6 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
         if (showM) {
             xc_origWillShow = (void (*)(id, SEL, id))method_setImplementation(showM, (IMP)xc_willShow);
         }
-    }
-
-    Class gateClass = objc_getClass("_TtC7xiaocanP33_02340CA986B901ABAA966A8072314D0519HomeSplashPopupGate");
-    Method gateInit = gateClass ? class_getInstanceMethod(gateClass, sel_registerName("init")) : NULL;
-    if (gateInit) {
-        xc_origGateInit = (id (*)(id, SEL))method_setImplementation(gateInit, (IMP)xc_gateInit);
     }
 }
 
@@ -150,9 +133,6 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
         self.alpha = 0.0;
         %orig;
         self.alpha = 0.0;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            XCInvokeHomeSplashGate(gHomeSplashGate);
-        });
         return;
     }
     %orig;
@@ -165,9 +145,6 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
         self.alpha = 0.0;
         %orig;
         self.alpha = 0.0;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            XCInvokeHomeSplashGate(gHomeSplashGate);
-        });
         return;
     }
     %orig;
@@ -199,3 +176,26 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
 }
 
 %end
+
+%ctor {
+    @autoreleasepool {
+        %init;
+        NSBundle *app = [NSBundle mainBundle];
+        BOOL knownApp = [app.bundleIdentifier isEqualToString:@"com.realtech.xiaocan"] &&
+            [[app objectForInfoDictionaryKey:@"CFBundleShortVersionString"] isEqual:@"3.21.6"];
+        Class cls = objc_getClass("_TtC7xiaocan10LaunchUtil");
+        Ivar flag = cls ? class_getInstanceVariable(cls, "ignoreSplashAd") : NULL;
+        Ivar view = cls ? class_getInstanceVariable(cls, "$__lazy_storage_$_launchView") : NULL;
+        BOOL knownLayout = cls && flag && view && class_getInstanceSize(cls) == 24 &&
+            ivar_getOffset(flag) == 8 && ivar_getOffset(view) == 16;
+        if (knownApp && knownLayout) {
+            gLaunchUtilClass = cls;
+            gIgnoreSplashOffset = ivar_getOffset(flag);
+            gLaunchViewOffset = ivar_getOffset(view);
+            %init(XCNativeLaunchSkip, XCLaunchUtil = cls);
+            NSLog(@"[XiaocanAdFree 1.0.8] native launch hook ready, awaiting real init");
+        } else {
+            NSLog(@"[XiaocanAdFree 1.0.8] native launch skip disabled: version/layout mismatch");
+        }
+    }
+}

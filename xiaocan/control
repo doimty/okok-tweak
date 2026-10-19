@@ -1,8 +1,8 @@
 Package: com.doimty.xiaocanadfree
 Name: 小蚕去广告
-Version: 1.0.7
+Version: 1.0.8
 Architecture: iphoneos-arm64
-Description: 高层开屏窗口出现后立即调用 App 级结束闸门
+Description: 实验性启用原生忽略开屏路径，保留统一广告窗口隐藏
 Maintainer: doimty
 Author: doimty
 Section: Tweaks

@@ -30,6 +30,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test native launch memory policy
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror xiaocan/tests/native_skip_policy.c -o /tmp/native-skip-policy
+          /tmp/native-skip-policy
+
       - name: Install packaging tools
         run: |
           set -euo pipefail
