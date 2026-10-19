@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
+#import <dispatch/dispatch.h>
 
 // 小蚕的开屏会轮换多个 SDK（实测出现过 Oct、GDT、BTP）。
 // 它们的共同点是都用 windowLevel 2001 的独立 UIWindow 承载开屏，
@@ -18,15 +19,53 @@ static BOOL XCIsSplashAdWindow(UIWindow *window) {
     return YES;
 }
 
+// 只拦显示还不够：App 在等广告 SDK 的关闭回调。
+// 主动触发广告自身的“跳过/关闭”控件，让 SDK 走正常结束流程。
+static void XCTapSkipControls(UIView *view, NSUInteger depth) {
+    if (!view || depth > 12) return;
+
+    if ([view isKindOfClass:[UIControl class]]) {
+        UIControl *control = (UIControl *)view;
+        NSString *title = @"";
+        if ([control isKindOfClass:[UIButton class]]) {
+            title = [(UIButton *)control titleForState:UIControlStateNormal] ?: @"";
+        }
+        NSString *cls = NSStringFromClass([control class]) ?: @"";
+        if ([title containsString:@"跳过"] || [title containsString:@"关闭"] ||
+            [cls containsString:@"Skip"] || [cls containsString:@"Close"]) {
+            [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        }
+    }
+
+    for (UIView *subview in view.subviews) {
+        XCTapSkipControls(subview, depth + 1);
+    }
+}
+
+static void XCScheduleSkipTaps(UIWindow *window) {
+    for (int i = 1; i <= 10; i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * i * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            XCTapSkipControls(window, 0);
+        });
+    }
+}
+
 %hook UIWindow
 
 - (void)makeKeyAndVisible {
-    if (XCIsSplashAdWindow(self)) return;
+    if (XCIsSplashAdWindow(self)) {
+        XCScheduleSkipTaps(self);
+        return;
+    }
     %orig;
 }
 
 - (void)setHidden:(BOOL)hidden {
-    if (!hidden && XCIsSplashAdWindow(self)) return;
+    if (!hidden && XCIsSplashAdWindow(self)) {
+        XCScheduleSkipTaps(self);
+        return;
+    }
     %orig;
 }
 
