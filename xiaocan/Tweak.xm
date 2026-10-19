@@ -1,57 +1,29 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
+#import <objc/message.h>
 
-// 小蚕 3.21.x 广告来自内置的 RichmobAdSDK（Swift 类，ObjC 可见）。
-// 关掉开屏 / 插屏 / 信息流；激励视频保留（用户主动触发）。
+// 仅处理已在小蚕 3.21.6 真机验证的 GDT 开屏路径。
+// 跳过实际展示，同时通知广告 delegate 开屏关闭，让 App 继续启动。
+%hook GDTSplashAd
 
-static void XCNoop(id self, SEL _cmd) {}
+- (void)showAdInWindow:(UIWindow *)window
+        withBottomView:(UIView *)bottomView
+              skipView:(UIView *)skipView {
+    SEL delegateSelector = sel_registerName("delegate");
+    SEL closedSelector = sel_registerName("splashAdClosed:");
 
-static void XCHookMethod(Class cls, const char *selName) {
-    if (!cls) return;
-    SEL sel = sel_registerName(selName);
-    Method m = class_getInstanceMethod(cls, sel);
-    if (m) method_setImplementation(m, (IMP)XCNoop);
+    id delegate = nil;
+    if ([self respondsToSelector:delegateSelector]) {
+        delegate = ((id (*)(id, SEL))objc_msgSend)(self, delegateSelector);
+    }
+
+    if (delegate && [delegate respondsToSelector:closedSelector]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(delegate, closedSelector, self);
+        return;
+    }
+
+    // SDK/版本行为不匹配时保留原广告展示，避免卡住启动流程。
+    %orig;
 }
 
-// 摇一摇跳转：广告 SDK 用 CMMotionManager 读加速度，直接停掉
-%hook CMMotionManager
-
-- (void)startAccelerometerUpdates {}
-- (void)startAccelerometerUpdatesToQueue:(id)queue withHandler:(id)handler {}
-- (void)startDeviceMotionUpdates {}
-- (void)startDeviceMotionUpdatesToQueue:(id)queue withHandler:(id)handler {}
-- (void)startDeviceMotionUpdatesUsingReferenceFrame:(NSUInteger)frame toQueue:(id)queue withHandler:(id)handler {}
-
 %end
-
-// Flutter 信息流广告的原生视图
-%hook FlutterNativeAdView
-
-- (void)loadAd {}
-- (void)showAd {}
-
-%end
-
-%ctor {
-    Class splash = objc_getClass("RichmobAdSDK.RichmobSplashAdManger");
-    if (splash) {
-        XCHookMethod(splash, "loadAdDataWithAdId:");
-        XCHookMethod(splash, "loadAdDataWithBidToken:");
-        XCHookMethod(splash, "showAdInControllerWithViewController:");
-        XCHookMethod(splash, "showAdInWindowWithWindow:");
-    }
-
-    Class insert = objc_getClass("RichmobAdSDK.RichmobInsertScreenAdManger");
-    if (insert) {
-        XCHookMethod(insert, "loadAdDataWithAdId:");
-        XCHookMethod(insert, "loadAdDataWithBidToken:");
-        XCHookMethod(insert, "showAdInControllerWithViewController:");
-    }
-
-    Class native = objc_getClass("RichmobAdSDK.RichmobNativeAdManger");
-    if (native) {
-        XCHookMethod(native, "loadAdDataWithAdId:");
-        XCHookMethod(native, "loadAdDataWithBidToken:");
-    }
-}
