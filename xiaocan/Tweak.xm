@@ -12,13 +12,14 @@
     SEL delegateSelector = sel_registerName("delegate");
     SEL closedSelector = sel_registerName("splashAdClosed:");
 
+    id ad = (id)self;
     id delegate = nil;
-    if ([self respondsToSelector:delegateSelector]) {
-        delegate = ((id (*)(id, SEL))objc_msgSend)(self, delegateSelector);
+    if ([ad respondsToSelector:delegateSelector]) {
+        delegate = ((id (*)(id, SEL))objc_msgSend)(ad, delegateSelector);
     }
 
     if (delegate && [delegate respondsToSelector:closedSelector]) {
-        ((void (*)(id, SEL, id))objc_msgSend)(delegate, closedSelector, self);
+        ((void (*)(id, SEL, id))objc_msgSend)(delegate, closedSelector, ad);
         return;
     }
 
