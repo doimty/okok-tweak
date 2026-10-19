@@ -1,0 +1,9 @@
+Package: com.doimty.pvzadfree
+Name: PvZ 去广告
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 自动关闭 PvZ 全屏广告，保留游戏流程
+Maintainer: doimty
+Author: doimty
+Section: Tweaks
+Depends: mobilesubstrate
