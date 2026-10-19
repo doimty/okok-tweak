@@ -1,0 +1,9 @@
+Package: com.doimty.xiaocanadfree
+Name: 小蚕去广告
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 关闭小蚕开屏、插屏与信息流广告，并禁用广告摇一摇跳转
+Maintainer: doimty
+Author: doimty
+Section: Tweaks
+Depends: mobilesubstrate
