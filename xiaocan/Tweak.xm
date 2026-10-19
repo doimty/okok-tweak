@@ -3,12 +3,10 @@
 #import <objc/message.h>
 #import <dispatch/dispatch.h>
 
-// 小蚕 3.21.6 的开屏广告由 XiaoCanAd.AdSplashBU 管理，
-// 广告以 windowLevel ≈ 2001 的独立 UIWindow 展示。
-// 实测链路：splashAdLoadSuccess: -> 窗口显示 -> splashAdRenderSuccess: -> splashAdWillShow:
-// 之后要等约 6.5 秒 SDK 才发 splashAdDidClose:closeType:，App 才继续启动。
-// 因此：窗口保持透明显示让 SDK 状态机正常推进，在 WillShow 后主动调用 App 自己的
-// splashAdDidClose:closeType:，让 Flutter 立刻拿到“开屏结束”并进入首页。
+// 小蚕 3.21.6 的开屏 SDK 会轮换；已观察到的开屏都使用约 2001 层窗口。
+// 持续将该窗口透明化，但保留原显示调用，让 SDK 自身状态机继续运行。
+// App 级 HomeSplashPopupGate 是实验性统一结束入口，只在真实高层开屏窗口存在时调用。
+// BU/GDT 仍保留各自已经实测过的关闭回调。
 static BOOL XCIsSplashAdWindow(UIWindow *window) {
     if (!window) return NO;
     CGFloat level = window.windowLevel;
@@ -22,49 +20,6 @@ static BOOL XCIsSplashAdWindow(UIWindow *window) {
     return YES;
 }
 
-static void XCTapSkipControls(UIView *view, NSUInteger depth) {
-    if (!view || depth > 12) return;
-
-    if ([view isKindOfClass:[UIControl class]]) {
-        UIControl *control = (UIControl *)view;
-        NSString *title = @"";
-        if ([control isKindOfClass:[UIButton class]]) {
-            title = [(UIButton *)control titleForState:UIControlStateNormal] ?: @"";
-        }
-        NSString *cls = NSStringFromClass([control class]) ?: @"";
-        if ([title containsString:@"跳过"] || [title containsString:@"关闭"] ||
-            [cls containsString:@"Skip"] || [cls containsString:@"Close"]) {
-            [control sendActionsForControlEvents:UIControlEventTouchUpInside];
-        }
-    }
-
-    for (UIView *subview in view.subviews) {
-        XCTapSkipControls(subview, depth + 1);
-    }
-}
-
-static void XCScheduleSkipTaps(UIWindow *window) {
-    for (int i = 1; i <= 15; i++) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * i * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            XCTapSkipControls(window, 0);
-        });
-    }
-}
-
-static void XCKeepInvisible(UIWindow *window) {
-    window.userInteractionEnabled = NO;
-    for (int i = 1; i <= 15; i++) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * i * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            if (window.alpha != 0.0) {
-                window.alpha = 0.0;
-            }
-            window.userInteractionEnabled = NO;
-        });
-    }
-}
-
 static __weak id gSplashBU;
 static __weak id gSplashAd;
 static __weak UIWindow *gSplashWindow;
@@ -74,14 +29,13 @@ static void XCFinishSplash(id bu, id ad) {
     if (gSplashClosed) return;
     if (!bu) bu = gSplashBU;
     if (!ad) ad = gSplashAd;
-    if (!bu) return;
-
-    gSplashClosed = YES;
+    if (!bu || !ad) return;
 
     SEL closeSel = sel_registerName("splashAdDidClose:closeType:");
-    if ([bu respondsToSelector:closeSel]) {
-        ((void (*)(id, SEL, id, long))objc_msgSend)(bu, closeSel, ad, 0);
-    }
+    if (![bu respondsToSelector:closeSel]) return;
+
+    gSplashClosed = YES;
+    ((void (*)(id, SEL, id, long))objc_msgSend)(bu, closeSel, ad, 0);
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
@@ -112,33 +66,88 @@ static void xc_willShow(id self, SEL cmd, id ad) {
     });
 }
 
+static __weak id gHomeSplashGate;
+static BOOL gHomeGateCalled;
+
+static BOOL XCHasSplashWindow(void) {
+    if (gSplashWindow && XCIsSplashAdWindow(gSplashWindow)) return YES;
+    UIApplication *app = [UIApplication sharedApplication];
+    for (UIWindow *window in app.windows) {
+        if (XCIsSplashAdWindow(window)) return YES;
+    }
+    return NO;
+}
+
+static void XCInvokeHomeSplashGate(id gate) {
+    if (!gate || gHomeGateCalled || gSplashBU || !XCHasSplashWindow()) return;
+
+    SEL selector = sel_registerName("handleAdClosed");
+    if (![gate respondsToSelector:selector]) return;
+
+    gHomeGateCalled = YES;
+    ((void (*)(id, SEL))objc_msgSend)(gate, selector);
+}
+
+static id (*xc_origGateInit)(id, SEL);
+static id xc_gateInit(id self, SEL cmd) {
+    id gate = xc_origGateInit ? xc_origGateInit(self, cmd) : self;
+    if (gate) {
+        gHomeSplashGate = gate;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            XCInvokeHomeSplashGate(gate);
+        });
+    }
+    return gate;
+}
+
 static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
     Class cls = objc_getClass("_TtC9XiaoCanAd10AdSplashBU");
-    if (!cls) return;
-
-    Method loadM = class_getInstanceMethod(cls, sel_registerName("splashAdLoadSuccess:"));
-    if (loadM) {
-        xc_origLoadSuccess = (void (*)(id, SEL, id))method_setImplementation(loadM, (IMP)xc_loadSuccess);
+    if (cls) {
+        Method loadM = class_getInstanceMethod(cls, sel_registerName("splashAdLoadSuccess:"));
+        if (loadM) {
+            xc_origLoadSuccess = (void (*)(id, SEL, id))method_setImplementation(loadM, (IMP)xc_loadSuccess);
+        }
+        Method showM = class_getInstanceMethod(cls, sel_registerName("splashAdWillShow:"));
+        if (showM) {
+            xc_origWillShow = (void (*)(id, SEL, id))method_setImplementation(showM, (IMP)xc_willShow);
+        }
     }
-    Method showM = class_getInstanceMethod(cls, sel_registerName("splashAdWillShow:"));
-    if (showM) {
-        xc_origWillShow = (void (*)(id, SEL, id))method_setImplementation(showM, (IMP)xc_willShow);
+
+    Class gateClass = objc_getClass("_TtC7xiaocanP33_02340CA986B901ABAA966A8072314D0519HomeSplashPopupGate");
+    Method gateInit = gateClass ? class_getInstanceMethod(gateClass, sel_registerName("init")) : NULL;
+    if (gateInit) {
+        xc_origGateInit = (id (*)(id, SEL))method_setImplementation(gateInit, (IMP)xc_gateInit);
     }
 }
 
 %hook UIWindow
 
+- (void)setAlpha:(CGFloat)alpha {
+    if (XCIsSplashAdWindow(self)) {
+        %orig(0.0);
+        return;
+    }
+    %orig;
+}
+
+- (void)setWindowLevel:(UIWindowLevel)windowLevel {
+    %orig;
+    if (XCIsSplashAdWindow(self)) {
+        gSplashWindow = self;
+        self.userInteractionEnabled = NO;
+        self.alpha = 0.0;
+    }
+}
+
 - (void)makeKeyAndVisible {
     if (XCIsSplashAdWindow(self)) {
         gSplashWindow = self;
+        self.userInteractionEnabled = NO;
         self.alpha = 0.0;
         %orig;
-        XCScheduleSkipTaps(self);
-        XCKeepInvisible(self);
-
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            XCFinishSplash(gSplashBU, gSplashAd);
+        self.alpha = 0.0;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            XCInvokeHomeSplashGate(gHomeSplashGate);
         });
         return;
     }
@@ -148,10 +157,13 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
 - (void)setHidden:(BOOL)hidden {
     if (!hidden && XCIsSplashAdWindow(self)) {
         gSplashWindow = self;
+        self.userInteractionEnabled = NO;
         self.alpha = 0.0;
         %orig;
-        XCScheduleSkipTaps(self);
-        XCKeepInvisible(self);
+        self.alpha = 0.0;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            XCInvokeHomeSplashGate(gHomeSplashGate);
+        });
         return;
     }
     %orig;

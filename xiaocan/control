@@ -1,8 +1,8 @@
 Package: com.doimty.xiaocanadfree
 Name: 小蚕去广告
-Version: 1.0.5
+Version: 1.0.6
 Architecture: iphoneos-arm64
-Description: 开屏窗口透明显示，主动触发开屏结束回调，避免启动等待
+Description: 统一隐藏高层开屏并尝试提前结束 App 开屏流程
 Maintainer: doimty
 Author: doimty
 Section: Tweaks
