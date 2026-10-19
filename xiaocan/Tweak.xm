@@ -2,6 +2,36 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 
+// 小蚕的开屏会轮换多个 SDK（实测出现过 Oct、GDT、BTP）。
+// 它们的共同点是都用 windowLevel 2001 的独立 UIWindow 承载开屏，
+// 因此统一在窗口层拦掉；GDT 额外补一次关闭回调，避免启动流程等待。
+static BOOL XCIsSplashAdWindow(UIWindow *window) {
+    if (!window) return NO;
+    CGFloat level = window.windowLevel;
+    if (level < 2000.0 || level > 2100.0) return NO;
+
+    NSString *rootName = NSStringFromClass([window.rootViewController class]);
+    if (!rootName) return YES;
+    if ([rootName rangeOfString:@"Input"].location != NSNotFound) return NO;
+    if ([rootName rangeOfString:@"TextEffects"].location != NSNotFound) return NO;
+    if ([rootName rangeOfString:@"Keyboard"].location != NSNotFound) return NO;
+    return YES;
+}
+
+%hook UIWindow
+
+- (void)makeKeyAndVisible {
+    if (XCIsSplashAdWindow(self)) return;
+    %orig;
+}
+
+- (void)setHidden:(BOOL)hidden {
+    if (!hidden && XCIsSplashAdWindow(self)) return;
+    %orig;
+}
+
+%end
+
 // 仅处理已在小蚕 3.21.6 真机验证的 GDT 开屏路径。
 // 跳过实际展示，同时通知广告 delegate 开屏关闭，让 App 继续启动。
 %hook GDTSplashAd

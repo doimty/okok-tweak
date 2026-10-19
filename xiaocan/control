@@ -1,8 +1,8 @@
 Package: com.doimty.xiaocanadfree
 Name: 小蚕去广告
-Version: 1.0.1
+Version: 1.0.2
 Architecture: iphoneos-arm64
-Description: 跳过已验证的小蚕 GDT 开屏广告；不处理其他广告位
+Description: 拦截 level 2001 的开屏广告窗口，覆盖轮换的 Oct/GDT/BTP 等 SDK
 Maintainer: doimty
 Author: doimty
 Section: Tweaks
