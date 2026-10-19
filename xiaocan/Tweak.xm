@@ -3,9 +3,12 @@
 #import <objc/message.h>
 #import <dispatch/dispatch.h>
 
-// 小蚕的开屏会轮换多个 SDK（实测出现过 Oct、GDT、BTP）。
-// 它们的共同点是都用 windowLevel 2001 的独立 UIWindow 承载开屏，
-// 因此统一在窗口层拦掉；GDT 额外补一次关闭回调，避免启动流程等待。
+// 小蚕 3.21.6 的开屏广告由 XiaoCanAd.AdSplashBU 管理，
+// 广告以 windowLevel ≈ 2001 的独立 UIWindow 展示。
+// 实测链路：splashAdLoadSuccess: -> 窗口显示 -> splashAdRenderSuccess: -> splashAdWillShow:
+// 之后要等约 6.5 秒 SDK 才发 splashAdDidClose:closeType:，App 才继续启动。
+// 因此：窗口保持透明显示让 SDK 状态机正常推进，在 WillShow 后主动调用 App 自己的
+// splashAdDidClose:closeType:，让 Flutter 立刻拿到“开屏结束”并进入首页。
 static BOOL XCIsSplashAdWindow(UIWindow *window) {
     if (!window) return NO;
     CGFloat level = window.windowLevel;
@@ -19,8 +22,6 @@ static BOOL XCIsSplashAdWindow(UIWindow *window) {
     return YES;
 }
 
-// 只拦显示还不够：App 在等广告 SDK 的关闭回调。
-// 主动触发广告自身的“跳过/关闭”控件，让 SDK 走正常结束流程。
 static void XCTapSkipControls(UIView *view, NSUInteger depth) {
     if (!view || depth > 12) return;
 
@@ -51,8 +52,6 @@ static void XCScheduleSkipTaps(UIWindow *window) {
     }
 }
 
-// 窗口必须真正进入 window 层级，广告控件才会响应跳过；
-// 因此让它显示但保持全透明，并持续兜底置零 alpha。
 static void XCKeepInvisible(UIWindow *window) {
     window.userInteractionEnabled = NO;
     for (int i = 1; i <= 15; i++) {
@@ -66,14 +65,81 @@ static void XCKeepInvisible(UIWindow *window) {
     }
 }
 
+static __weak id gSplashBU;
+static __weak id gSplashAd;
+static __weak UIWindow *gSplashWindow;
+static BOOL gSplashClosed;
+
+static void XCFinishSplash(id bu, id ad) {
+    if (gSplashClosed) return;
+    if (!bu) bu = gSplashBU;
+    if (!ad) ad = gSplashAd;
+    if (!bu) return;
+
+    gSplashClosed = YES;
+
+    SEL closeSel = sel_registerName("splashAdDidClose:closeType:");
+    if ([bu respondsToSelector:closeSel]) {
+        ((void (*)(id, SEL, id, long))objc_msgSend)(bu, closeSel, ad, 0);
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        UIWindow *window = gSplashWindow;
+        if (window && !window.hidden) {
+            window.hidden = YES;
+        }
+    });
+}
+
+static void (*xc_origLoadSuccess)(id, SEL, id);
+static void xc_loadSuccess(id self, SEL cmd, id ad) {
+    gSplashBU = self;
+    gSplashAd = ad;
+    gSplashClosed = NO;
+    if (xc_origLoadSuccess) xc_origLoadSuccess(self, cmd, ad);
+}
+
+static void (*xc_origWillShow)(id, SEL, id);
+static void xc_willShow(id self, SEL cmd, id ad) {
+    if (ad) gSplashAd = ad;
+    if (xc_origWillShow) xc_origWillShow(self, cmd, ad);
+
+    id bu = self;
+    id adRef = ad;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        XCFinishSplash(bu, adRef);
+    });
+}
+
+static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
+    Class cls = objc_getClass("_TtC9XiaoCanAd10AdSplashBU");
+    if (!cls) return;
+
+    Method loadM = class_getInstanceMethod(cls, sel_registerName("splashAdLoadSuccess:"));
+    if (loadM) {
+        xc_origLoadSuccess = (void *)method_setImplementation(loadM, (IMP)xc_loadSuccess);
+    }
+    Method showM = class_getInstanceMethod(cls, sel_registerName("splashAdWillShow:"));
+    if (showM) {
+        xc_origWillShow = (void *)method_setImplementation(showM, (IMP)xc_willShow);
+    }
+}
+
 %hook UIWindow
 
 - (void)makeKeyAndVisible {
     if (XCIsSplashAdWindow(self)) {
+        gSplashWindow = self;
         self.alpha = 0.0;
         %orig;
         XCScheduleSkipTaps(self);
         XCKeepInvisible(self);
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            XCFinishSplash(gSplashBU, gSplashAd);
+        });
         return;
     }
     %orig;
@@ -81,6 +147,7 @@ static void XCKeepInvisible(UIWindow *window) {
 
 - (void)setHidden:(BOOL)hidden {
     if (!hidden && XCIsSplashAdWindow(self)) {
+        gSplashWindow = self;
         self.alpha = 0.0;
         %orig;
         XCScheduleSkipTaps(self);
@@ -92,8 +159,7 @@ static void XCKeepInvisible(UIWindow *window) {
 
 %end
 
-// 仅处理已在小蚕 3.21.6 真机验证的 GDT 开屏路径。
-// 跳过实际展示，同时通知广告 delegate 开屏关闭，让 App 继续启动。
+// GDT 开屏作为兜底路径保留。
 %hook GDTSplashAd
 
 - (void)showAdInWindow:(UIWindow *)window
@@ -113,7 +179,6 @@ static void XCKeepInvisible(UIWindow *window) {
         return;
     }
 
-    // SDK/版本行为不匹配时保留原广告展示，避免卡住启动流程。
     %orig;
 }
 
