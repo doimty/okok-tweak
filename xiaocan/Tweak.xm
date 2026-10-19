@@ -43,10 +43,23 @@ static void XCTapSkipControls(UIView *view, NSUInteger depth) {
 }
 
 static void XCScheduleSkipTaps(UIWindow *window) {
-    for (int i = 1; i <= 10; i++) {
+    for (int i = 1; i <= 15; i++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * i * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             XCTapSkipControls(window, 0);
+        });
+    }
+}
+
+// 窗口必须真正进入 window 层级，广告控件才会响应跳过；
+// 因此让它显示但保持全透明，并持续兜底置零 alpha。
+static void XCKeepInvisible(UIWindow *window) {
+    for (int i = 1; i <= 15; i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * i * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if (window.alpha != 0.0) {
+                window.alpha = 0.0;
+            }
         });
     }
 }
@@ -55,7 +68,10 @@ static void XCScheduleSkipTaps(UIWindow *window) {
 
 - (void)makeKeyAndVisible {
     if (XCIsSplashAdWindow(self)) {
+        self.alpha = 0.0;
+        %orig;
         XCScheduleSkipTaps(self);
+        XCKeepInvisible(self);
         return;
     }
     %orig;
@@ -63,7 +79,10 @@ static void XCScheduleSkipTaps(UIWindow *window) {
 
 - (void)setHidden:(BOOL)hidden {
     if (!hidden && XCIsSplashAdWindow(self)) {
+        self.alpha = 0.0;
+        %orig;
         XCScheduleSkipTaps(self);
+        XCKeepInvisible(self);
         return;
     }
     %orig;
