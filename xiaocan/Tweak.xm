@@ -83,7 +83,7 @@ static BOOL XCHasSplashWindow(void) {
 }
 
 static void XCInvokeHomeSplashGate(id gate) {
-    if (!gate || gHomeGateCalled || gSplashBU || !XCHasSplashWindow()) return;
+    if (!gate || gHomeGateCalled || !XCHasSplashWindow()) return;
 
     SEL selector = sel_registerName("handleAdClosed");
     if (![gate respondsToSelector:selector]) return;
