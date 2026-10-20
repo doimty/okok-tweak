@@ -12,7 +12,7 @@ INSTALL_TARGET_PROCESSES = xiaocan
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = XiaocanAdFree
-XiaocanAdFree_FILES = Tweak.xm
+XiaocanAdFree_FILES = Tweak.xm HomePromotions.xm
 XiaocanAdFree_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk

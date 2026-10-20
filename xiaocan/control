@@ -1,8 +1,8 @@
 Package: com.doimty.xiaocanadfree
 Name: 小蚕去广告
-Version: 1.0.8
+Version: 1.0.9
 Architecture: iphoneos-arm64
-Description: 实验性启用原生忽略开屏路径，保留统一广告窗口隐藏
+Description: 实验性清理首页已确认推广位，保留原生忽略开屏路径
 Maintainer: doimty
 Author: doimty
 Section: Tweaks

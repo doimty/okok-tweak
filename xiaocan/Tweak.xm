@@ -6,7 +6,7 @@
 #import "XCLaunchPolicy.h"
 
 // Preserve SDK presentation state, but keep known high-level splash windows clear.
-// 1.0.8 selects LaunchUtil's native ignoreSplashAd branch at initialization.
+// 1.0.9 selects LaunchUtil's native ignoreSplashAd branch at initialization.
 // It does not call HomeSplashPopupGate or invoke raw Swift function addresses.
 static BOOL XCIsSplashAdWindow(UIWindow *window) {
     if (!window) return NO;
@@ -76,7 +76,7 @@ static void XCEnableNativeLaunchSkip(id instance) {
     BOOL applied = XCSetNativeSplashIgnore((__bridge void *)instance,
                                           class_getInstanceSize(gLaunchUtilClass),
                                           gIgnoreSplashOffset, gLaunchViewOffset);
-    NSLog(@"[XiaocanAdFree 1.0.8] LaunchUtil native ignore %@",
+    NSLog(@"[XiaocanAdFree 1.0.9] LaunchUtil native ignore %@",
           applied ? @"applied" : @"rejected");
 }
 
@@ -193,9 +193,9 @@ static __attribute__((constructor)) void XCInstallAdSplashHooks(void) {
             gIgnoreSplashOffset = ivar_getOffset(flag);
             gLaunchViewOffset = ivar_getOffset(view);
             %init(XCNativeLaunchSkip, XCLaunchUtil = cls);
-            NSLog(@"[XiaocanAdFree 1.0.8] native launch hook ready, awaiting real init");
+            NSLog(@"[XiaocanAdFree 1.0.9] native launch hook ready, awaiting real init");
         } else {
-            NSLog(@"[XiaocanAdFree 1.0.8] native launch skip disabled: version/layout mismatch");
+            NSLog(@"[XiaocanAdFree 1.0.9] native launch skip disabled: version/layout mismatch");
         }
     }
 }

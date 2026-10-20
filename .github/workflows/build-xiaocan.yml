@@ -36,6 +36,16 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror xiaocan/tests/native_skip_policy.c -o /tmp/native-skip-policy
           /tmp/native-skip-policy
 
+      - name: Test home promotion policy and registry
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror xiaocan/tests/home_promotion_policy.c -o /tmp/home-promotion-policy
+          /tmp/home-promotion-policy
+          clang++ -x c++ -std=c++17 -Wall -Wextra -Werror xiaocan/tests/home_promotion_policy.c -o /tmp/home-promotion-policy-cpp
+          /tmp/home-promotion-policy-cpp
+          clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation xiaocan/tests/home_promotion_registry.m -o /tmp/home-promotion-registry
+          /tmp/home-promotion-registry
+
       - name: Install packaging tools
         run: |
           set -euo pipefail
