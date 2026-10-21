@@ -32,7 +32,7 @@
   "src/WCKSettingsViewController.m": "0ca29bec2eab6bb52a01ba66dcfacacbe86e7a55d5aff98b70125e88e54c0546",
   "src/WCKVerifiedFeatures.m": "fe13af45b3c6e8aee3a06e46e15f1802de62b6cbe718db5ddb73855ae8cd89b6",
   "tests/WCKEntryRegistryRegression.m": "5b58ff2abde3c056cbd5598177e6f9f2145f96f1bb88bbc80390bb6d35a6657b",
-  "tests/WCKHostIdentityRegression.m": "c227c48f54d3ed85f6ecc1f279fc309ee7702c86c2a0bdf9918b6eab3f501be9",
+  "tests/WCKHostIdentityRegression.m": "6240804696a42d33784af50b0204583675e8188e37cb082aeb3d3b33d65e41fc",
   "tests/WCKSVGModel.m": "6df5b50767d05d9620050fd38f954f5b2c49d4c6732d0835651290ccb89d7a06",
   "tests/WCKSVGSelectionTests.m": "152532a27f8f47fb0eb71e251ae9b173ebe8d498bd9d64cd5a883c5a5d530a46",
   "tests/WCKSettingsRegression.m": "0ca572a19b82d91369d2212e3df639968bf5dc69c4ebb584b6003739beac2148",
