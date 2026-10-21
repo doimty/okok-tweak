@@ -5,7 +5,7 @@
 ## 已查证
 
 - alpha1 已安装且 dylib 已映射，不是用户安装错误。源码未调用 WCPluginsMgr，且设置入口错误依赖两条 Hook 同时成功。
-- BubbleBox 在 0x3658b4 调用 objc_msgSend(sharedInstance)，0x365900 调用 objc_msgSend(registerControllerWithTitle:version:controller:)；参数含 BubbleBox、1.0.7、BubbleBoxSettingsViewController 类名字符串。主会话从实际样本调用窗口、选择器槽及导入桩复核，不只依赖 strings。
+- BubbleBox 在 0x365928 调用 objc_msgSend(sharedInstance)，所得对象在 0x3659e4 收到 registerControllerWithTitle:version:controller:。其前置 0x3658ec 调用桩实际为 objc_getClass，三个参数传入静态常量字符串结构。该样本字符串混淆，当前小窗口未解出接收类名、标题/版本/controller原文，不据此宣称具体参数值或注册时机。选择器槽和导入桩已经复核，不只依赖 strings。
 - wcplugins 的 controller 是 NSString，打开时解析控制器类名。plugins getter 懒初始化数组。未声称完整还原 BubbleBox 注册调度时机，也未把旧 WCR/WCP 入口推断当成事实。
 
 ## 改动
