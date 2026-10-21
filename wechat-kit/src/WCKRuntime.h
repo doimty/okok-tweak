@@ -12,6 +12,7 @@ FOUNDATION_EXPORT BOOL WCKInstallHook(Class _Nullable cls, SEL selector,
     IMP replacement, IMP _Nullable * _Nonnull original, const char *returnType,
     const char * _Nullable const * _Nullable arguments, unsigned int argumentCount);
 FOUNDATION_EXPORT BOOL WCKEnabled(NSString *feature);
+FOUNDATION_EXPORT void WCKInstallEntryPoints(void);
 FOUNDATION_EXPORT void WCKInstallKeyboard(void);
 FOUNDATION_EXPORT void WCKInstallSVG(void);
 FOUNDATION_EXPORT void WCKInstallReadAll(void);

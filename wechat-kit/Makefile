@@ -8,7 +8,8 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = WeChatKit
 WeChatKit_FILES = src/WCKBootstrap.m src/WCKRuntime.m src/WCKPolicy.c \
     src/WCKSettings.m src/WCKSettingsViewController.m src/WCKKeyboard.m \
-    src/WCKSVG.m src/WCKReadAll.m src/WCKVerifiedFeatures.m
+    src/WCKSVG.m src/WCKReadAll.m src/WCKVerifiedFeatures.m \
+    src/WCKEntryRegistry.m src/WCKEntryUI.m
 WeChatKit_FRAMEWORKS = Foundation UIKit CoreGraphics
 WeChatKit_CFLAGS = -fobjc-arc -Isrc -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-deprecated-declarations

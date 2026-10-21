@@ -50,11 +50,14 @@ class FeatureContracts(unittest.TestCase):
         for s in ['albumSheet','momentsTime','noHotUpdate']:
             self.assertIn(s,src)
     def test_preserves_settings_bar(self):
-        src=(root/'src/WCKBootstrap.m').read_text()
+        src=(root/'src/WCKEntryUI.m').read_text()
         self.assertIn('[existing containsObject:item]',src)
         self.assertIn('[next addObject:item]',src)
-        self.assertIn('if (!WCKHostIsSupported()) return;',src)
-        self.assertIn('sSettingsHookReady = loaded && appeared',src)
+        self.assertIn('sLoadReady || sWillReady || sDidReady || sReloadReady',src)
+        self.assertNotIn('loaded && appeared',src)
+        bootstrap=(root/'src/WCKBootstrap.m').read_text()
+        self.assertIn('if (!WCKHostIsSupported()) return;',bootstrap)
+        self.assertLess(bootstrap.index('WCKInstallEntryPoints();'),bootstrap.index('WCKInstallKeyboard();'))
     def test_independent_runtime(self):
         src='\n'.join(p.read_text() for p in (root/'src').glob('*') if p.suffix in ('.h','.c','.m'))
         for forbidden in ['WCRefine','WCPulse','WeX','https://','NSURLConnection',
