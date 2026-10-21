@@ -1,6 +1,6 @@
 Package: com.doimty.wechatkit
 Name: WeChatKit
-Version: 0.1.0-alpha4
+Version: 0.1.0-alpha5
 Architecture: iphoneos-arm64e
 Description: Independent opt-in WeChat interface helpers. Experimental; exact build gated.
 Maintainer: doimty

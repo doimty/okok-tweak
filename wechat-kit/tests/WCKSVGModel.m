@@ -34,6 +34,7 @@ static WCKSettings *modelStore;
     n.capInsets=self.capInsets;n.alignmentRectInsets=self.alignmentRectInsets;n.resizingMode=self.resizingMode;
     n.renderingMode=self.renderingMode;n.wasTinted=self.wasTinted;n.paintedRGB=self.paintedRGB;return n;
 }
+- (UIImage *)resizableImageWithCapInsets:(UIEdgeInsets)i {return [self resizableImageWithCapInsets:i resizingMode:UIImageResizingModeTile];}
 - (UIImage *)resizableImageWithCapInsets:(UIEdgeInsets)i resizingMode:(UIImageResizingMode)m {UIImage*n=[self clone];n.capInsets=i;n.resizingMode=m;return n;}
 - (UIImage *)imageWithAlignmentRectInsets:(UIEdgeInsets)i {UIImage*n=[self clone];n.alignmentRectInsets=i;return n;}
 - (UIImage *)imageWithRenderingMode:(UIImageRenderingMode)m {UIImage*n=[self clone];n.renderingMode=m;return n;}
@@ -73,6 +74,13 @@ BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*orig,const char*r,const char*const
 static UIImage *source;
 static NSUInteger originalCalls;
 @interface WCSVGImage : NSObject
++ (id)imageNamed:(id)n;
++ (id)imageNamed:(id)n color:(id)c;
++ (id)imageNamed:(id)n color:(id)c alpha:(double)a;
++ (id)imageNamed:(id)n color:(id)c alpha:(double)a rotate:(double)r;
++ (id)imageNamed:(id)n size:(CGSize)s;
++ (id)imageNamed:(id)n size:(CGSize)s color:(id)c;
++ (id)imageData:(id)d resize:(CGSize)s scale:(double)scale;
 + (id)imageNamed:(id)n size:(CGSize)s color:(id)c alpha:(double)a rotate:(double)r;
 + (id)imageNamed:(id)n fromConfig:(id)c;
 + (id)imageData:(id)d fromConfig:(id)c;
@@ -80,6 +88,13 @@ static NSUInteger originalCalls;
 + (id)imageWithContentsOfFile:(id)n size:(CGSize)s color:(id)c alpha:(double)a rotate:(double)r;
 @end
 @implementation WCSVGImage
++ (id)imageNamed:(id)n {originalCalls++;return source;}
++ (id)imageNamed:(id)n color:(id)c {originalCalls++;return source;}
++ (id)imageNamed:(id)n color:(id)c alpha:(double)a {originalCalls++;return source;}
++ (id)imageNamed:(id)n color:(id)c alpha:(double)a rotate:(double)r {originalCalls++;return source;}
++ (id)imageNamed:(id)n size:(CGSize)s {originalCalls++;return source;}
++ (id)imageNamed:(id)n size:(CGSize)s color:(id)c {originalCalls++;return source;}
++ (id)imageData:(id)d resize:(CGSize)s scale:(double)scale {originalCalls++;return source;}
 + (id)imageNamed:(id)n size:(CGSize)s color:(id)c alpha:(double)a rotate:(double)r {
     (void)s;(void)c;(void)a;(void)r;originalCalls++;return [self imageNamed:n fromConfig:@{}];
 }
@@ -129,6 +144,29 @@ int main(void){@autoreleasepool{
     iv.highlightedImage=initial;CHECK(iv.highlightedImage.paintedRGB==0x334455);
     set(@"enabled",@NO);CHECK(![b imageForState:0].wasTinted&&!iv.highlightedImage.wasTinted);
     CHECK(!source.wasTinted&&source.renderingMode==UIImageRenderingModeAlwaysTemplate);
+    // Short overloads intentionally DO NOT forward: each production hook must work.
+    set(@"enabled",@YES);
+    NSArray *factoryImages=@[[WCSVGImage imageNamed:@"short"],
+        [WCSVGImage imageNamed:@"short" color:nil],
+        [WCSVGImage imageNamed:@"short" color:nil alpha:0.3],
+        [WCSVGImage imageNamed:@"short" color:nil alpha:0.3 rotate:0.1],
+        [WCSVGImage imageNamed:@"short" size:(CGSize){5,6}],
+        [WCSVGImage imageNamed:@"short" size:(CGSize){5,6} color:nil],
+        [WCSVGImage imageData:[NSData data] resize:(CGSize){5,6} scale:2]];
+    for(UIImage *img in factoryImages) CHECK(img.wasTinted&&img!=source);
+    UIImage *originalSVG=[WCSVGImage imageNamed:@"transformed"];
+    UIImage *mode=[originalSVG imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    UIImage *stretch=[mode resizableImageWithCapInsets:(UIEdgeInsets){9,8,7,6} resizingMode:UIImageResizingModeStretch];
+    UIImage *aligned=[stretch imageWithAlignmentRectInsets:(UIEdgeInsets){6,7,8,9}];
+    UIImage *shortResize=[originalSVG resizableImageWithCapInsets:(UIEdgeInsets){3,4,5,6}];
+    UIImageView *changed=[UIImageView new];changed.traitCollection.userInterfaceStyle=UIUserInterfaceStyleDark;
+    changed.image=aligned;CHECK(changed.image.paintedRGB==0x334455);CHECK(changed.image.capInsets.left==8);CHECK(changed.image.alignmentRectInsets.right==9);
+    set(@"svgTintDark",@"#ABCDEF");CHECK(changed.image.paintedRGB==0xABCDEF);
+    set(@"enabled",@NO);CHECK(!changed.image.wasTinted);CHECK(changed.image.capInsets.left==8);CHECK(changed.image.alignmentRectInsets.right==9);
+    changed.image=shortResize;CHECK(!changed.image.wasTinted);CHECK(changed.image.capInsets.left==4);
+    UIImage *photoCopy=[photo imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    changed.image=photoCopy;set(@"enabled",@YES);CHECK(changed.image==photoCopy);CHECK(!photoCopy.wasTinted);
+    CHECK(!source.wasTinted&&source.capInsets.left==2);
     printf("production SVG model: %d checks PASS (not UIKit rendering)\n",checks);
     return 0;
 }}

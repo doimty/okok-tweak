@@ -27,8 +27,10 @@ class EntryContracts(unittest.TestCase):
         self.assertIn('UIApplicationDidBecomeActiveNotification',bootstrap)
         self.assertIn('__weak UIViewController *weakHost',ui)
         self.assertNotIn('NSTimer',bootstrap+ui)
-    def test_row_and_navigation_are_independent(self):
-        self.assertIn('WCKAddNavigationEntry(host, driver);',ui)
+    def test_row_without_navigation_button(self):
+        self.assertNotIn('WCKAddNavigationEntry',ui)
+        self.assertNotIn('rightBarButton',ui)
+        self.assertNotIn('UIBarButtonItem',ui)
         self.assertIn('WCKAddSettingsRow(host, driver);',ui)
         self.assertIn('[sections containsObject:driver.section]',ui)
         self.assertIn('driver.updating',ui)
@@ -41,9 +43,9 @@ class EntryContracts(unittest.TestCase):
         self.assertIn('@finally { sRegistrationInProgress = NO; }',registry)
         self.assertIn('[value count] > 2048',registry)
     def test_build_metadata_and_native_test(self):
-        self.assertIn('Version: 0.1.0-alpha4',(root/'control').read_text())
+        self.assertIn('Version: 0.1.0-alpha5',(root/'control').read_text())
         self.assertIn('src/WCKEntryRegistry.m src/WCKEntryUI.m',(root/'Makefile').read_text())
-        self.assertIn('"0.1.0-alpha4"',registry)
+        self.assertIn('"0.1.0-alpha5"',registry)
         native=(root/'tests/run_entry_native.py').read_text()
         for x in ['COMPILE FAILED','wrong_abi','absent_then_late','mutant-no-registration','mutant-no-dedupe']:
             self.assertIn(x,native)

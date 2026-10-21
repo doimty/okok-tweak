@@ -41,7 +41,7 @@ BOOL WCKMethodMatches(Class cls, SEL sel, const char *ret, const char *const *ar
 + (id)sharedInstance { return returnNil ? nil : shared; }
 - (void)registerControllerWithTitle:(id)title version:(id)version controller:(id)controller {
     CHECK(NSThread.isMainThread);
-    CHECK([title isEqual:@"WeChatKit"] && [version isEqual:@"0.1.0-alpha4"]);
+    CHECK([title isEqual:@"WeChatKit"] && [version isEqual:@"0.1.0-alpha5"]);
     CHECK([controller isKindOfClass:NSString.class]);
     CHECK([controller isEqual:@"WCKSettingsViewController"]);
     ++registrations;

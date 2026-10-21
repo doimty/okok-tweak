@@ -50,12 +50,14 @@ class FeatureContracts(unittest.TestCase):
         src=(root/'src/WCKVerifiedFeatures.m').read_text()
         self.assertIn('WCKInstallReadAll()',src)
         self.assertNotIn('@"ready"',src)
-        for s in ['albumSheet','momentsTime','noHotUpdate']:
-            self.assertIn(s,src)
+        self.assertIn('WCKInstallAlbumSheet()',src)
+        self.assertIn('WCKInstallMomentsTime()',src)
+        self.assertIn('noHotUpdate',src)
     def test_preserves_settings_bar(self):
         src=(root/'src/WCKEntryUI.m').read_text()
-        self.assertIn('[existing containsObject:item]',src)
-        self.assertIn('[next addObject:item]',src)
+        self.assertNotIn('rightBarButton',src)
+        self.assertNotIn('UIBarButtonItem',src)
+        self.assertIn('WCKAddSettingsRow(host, driver)',src)
         self.assertIn('sLoadReady || sWillReady || sDidReady || sReloadReady',src)
         self.assertNotIn('loaded && appeared',src)
         bootstrap=(root/'src/WCKBootstrap.m').read_text()

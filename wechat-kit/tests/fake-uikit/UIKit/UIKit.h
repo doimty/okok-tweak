@@ -25,6 +25,7 @@ typedef NSUInteger UIControlState;
 @property uint32_t paintedRGB;
 @property BOOL wasTinted;
 - (instancetype)initWithCGImage:(CGImageRef)image scale:(double)scale orientation:(UIImageOrientation)orientation;
+- (UIImage *)resizableImageWithCapInsets:(UIEdgeInsets)insets;
 - (UIImage *)resizableImageWithCapInsets:(UIEdgeInsets)insets resizingMode:(UIImageResizingMode)mode;
 - (UIImage *)imageWithAlignmentRectInsets:(UIEdgeInsets)insets;
 - (UIImage *)imageWithRenderingMode:(UIImageRenderingMode)mode;

@@ -9,7 +9,9 @@ variants={
  'baseline':source,
  'mutant-drop-provenance':source.replace('(void)factory;', 'if (!tint && !factory) return source;'),
  'mutant-no-settings-refresh':source.replace('for (UIView *view in sSVGViews.allObjects) WCKRefreshSVGView(view);','for (UIView *view in sSVGViews.allObjects) (void)view;'),
- 'mutant-ignore-carrier-dark':source.replace('view.traitCollection','UITraitCollection.currentTraitCollection')}
+ 'mutant-ignore-carrier-dark':source.replace('view.traitCollection','UITraitCollection.currentTraitCollection'),
+ 'mutant-no-transform-provenance':source.replace('return WCKSVGRecord(result, descriptor.name)', 'return result'),
+ 'mutant-no-short-factory':source.replace('BOOL simple = WCKInstallHook','BOOL simple = NO && WCKInstallHook')}
 results=[]
 with tempfile.TemporaryDirectory(prefix='wck-svg-model-') as td:
  td=Path(td)

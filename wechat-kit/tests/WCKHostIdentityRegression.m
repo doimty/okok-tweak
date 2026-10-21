@@ -42,7 +42,7 @@ static id fixtureMainBundle(id cls,SEL selector) { return fixture; }
 }
 - (void)registerControllerWithTitle:(id)title version:(id)version controller:(id)controller {
     CHECK(NSThread.isMainThread);
-    CHECK([title isEqual:@"WeChatKit"] && [version isEqual:@"0.1.0-alpha4"]);
+    CHECK([title isEqual:@"WeChatKit"] && [version isEqual:@"0.1.0-alpha5"]);
     CHECK([controller isKindOfClass:NSString.class] && [controller isEqual:@"WCKSettingsViewController"]);
     IdentityPluginModel *model=[IdentityPluginModel new];model.controller=controller;
     [self.plugins addObject:model];++self.registrations;

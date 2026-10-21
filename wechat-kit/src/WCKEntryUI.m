@@ -14,7 +14,6 @@ static BOOL sLoadReady, sWillReady, sDidReady, sReloadReady, sHubReady;
 
 @interface WCKSettingsEntry : NSObject
 @property (nonatomic, weak) UIViewController *host;
-@property (nonatomic, strong) UIBarButtonItem *item;
 @property (nonatomic, weak) id section;
 @property (nonatomic, weak) id manager;
 @property (nonatomic) BOOL updating;
@@ -37,22 +36,9 @@ static WCKSettingsEntry *WCKDriver(UIViewController *host) {
     WCKSettingsEntry *driver = objc_getAssociatedObject(host, &sEntryStateKey);
     if (!driver) {
         driver = [WCKSettingsEntry new]; driver.host = host;
-        driver.item = [[UIBarButtonItem alloc] initWithTitle:@"WCK"
-            style:UIBarButtonItemStylePlain target:driver action:@selector(openSettings)];
-        driver.item.accessibilityLabel = @"WeChatKit 设置";
-        driver.item.accessibilityIdentifier = @"wck.settings.entry";
         objc_setAssociatedObject(host, &sEntryStateKey, driver, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     return driver;
-}
-
-static void WCKAddNavigationEntry(UIViewController *host, WCKSettingsEntry *driver) {
-    UIBarButtonItem *item = driver.item;
-    NSArray *existing = host.navigationItem.rightBarButtonItems ?: @[];
-    if (![existing containsObject:item]) {
-        NSMutableArray *next = [existing mutableCopy];
-        [next addObject:item]; host.navigationItem.rightBarButtonItems = next;
-    }
 }
 
 static BOOL WCKAddSettingsRow(UIViewController *host, WCKSettingsEntry *driver) {
@@ -99,9 +85,8 @@ static void WCKRefreshEntry(UIViewController *host) {
     if (driver.updating) return;
     driver.updating = YES;
     @try {
-        WCKAddNavigationEntry(host, driver);
         BOOL row = WCKAddSettingsRow(host, driver);
-        WCKSetModuleStatus(@"settingsListEntry", row ? @"ready" : @"设置列表接口不可用；保留右上按钮");
+        WCKSetModuleStatus(@"settingsListEntry", row ? @"ready" : @"设置列表接口不可用；使用插件收纳入口");
     } @catch (__unused NSException *exception) {
         WCKSetModuleStatus(@"settingsListEntry", @"列表入口异常；保留独立入口");
     } @finally { driver.updating = NO; }

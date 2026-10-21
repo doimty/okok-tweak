@@ -32,6 +32,18 @@ static id (*sOriginalFile)(id, SEL, id, CGSize, id, double, double);
 static id (*sOriginalConfig)(id, SEL, id, id);
 static id (*sOriginalAdapted)(id, SEL, id, id, id);
 static id (*sOriginalData)(id, SEL, id, id);
+static id (*sOriginalSimple)(id, SEL, id);
+static id (*sOriginalColor)(id, SEL, id, id);
+static id (*sOriginalAlpha)(id, SEL, id, id, double);
+static id (*sOriginalRotate)(id, SEL, id, id, double, double);
+static id (*sOriginalSize)(id, SEL, id, CGSize);
+static id (*sOriginalSizeColor)(id, SEL, id, CGSize, id);
+static id (*sOriginalResizeData)(id, SEL, id, CGSize, double);
+static id (*sOriginalMode)(id, SEL, UIImageRenderingMode);
+static id (*sOriginalInsets)(id, SEL, UIEdgeInsets);
+static id (*sOriginalResize)(id, SEL, UIEdgeInsets, UIImageResizingMode);
+static id (*sOriginalAlign)(id, SEL, UIEdgeInsets);
+static _Thread_local NSUInteger sTransformDepth;
 static void (*sOriginalImage)(id, SEL, UIImage *);
 static void (*sOriginalHighlighted)(id, SEL, UIImage *);
 static void (*sOriginalButton)(id, SEL, UIImage *, UIControlState);
@@ -128,6 +140,44 @@ static id WCKSVGData(id cls, SEL cmd, id data, id config) {
     @finally { --sFactoryDepth; }
     return top ? WCKSVGRecord(result, @"<svg-data>") : result;
 }
+
+// Cover convenience factories independently: other plugins can replace a short
+// overload without forwarding to the full-size overload. Never tag svgDataWithName:.
+#define WCK_FACTORY_BODY(call, icon) \
+    BOOL top = sFactoryDepth++ == 0; id result; \
+    @try { result = (call); } @finally { --sFactoryDepth; } \
+    return top ? WCKSVGRecord(result, (icon)) : result
+static id WCKSVGSimple(id c, SEL s, id n) { WCK_FACTORY_BODY(sOriginalSimple(c,s,n), n); }
+static id WCKSVGColor(id c, SEL s, id n, id color) { WCK_FACTORY_BODY(sOriginalColor(c,s,n,color), n); }
+static id WCKSVGAlpha(id c, SEL s, id n, id color, double a) { WCK_FACTORY_BODY(sOriginalAlpha(c,s,n,color,a), n); }
+static id WCKSVGRotate(id c, SEL s, id n, id color, double a, double r) { WCK_FACTORY_BODY(sOriginalRotate(c,s,n,color,a,r), n); }
+static id WCKSVGSize(id c, SEL s, id n, CGSize size) { WCK_FACTORY_BODY(sOriginalSize(c,s,n,size), n); }
+static id WCKSVGSizeColor(id c, SEL s, id n, CGSize size, id color) { WCK_FACTORY_BODY(sOriginalSizeColor(c,s,n,size,color), n); }
+static id WCKSVGResizeData(id c, SEL s, id data, CGSize size, double scale) { WCK_FACTORY_BODY(sOriginalResizeData(c,s,data,size,scale), @"<svg-data>"); }
+#undef WCK_FACTORY_BODY
+
+// UIImage returns a new object for these operations and drops associated objects.
+// Propagate only proven SVG provenance, from an independently transformed raw
+// source. Untagged photos/avatars take exactly their original path.
+#define WCK_TRANSFORM_BODY(call) \
+    WCKSVGDescriptor *descriptor = !sTransformDepth ? WCKDescriptor(image) : nil; \
+    if (!descriptor) return (call); \
+    image = descriptor.source; id result; ++sTransformDepth; \
+    @try { result = (call); } @finally { --sTransformDepth; } \
+    return WCKSVGRecord(result, descriptor.name)
+static id WCKSVGMode(id image, SEL cmd, UIImageRenderingMode mode) {
+    WCK_TRANSFORM_BODY(sOriginalMode(image,cmd,mode));
+}
+static id WCKSVGInsets(id image, SEL cmd, UIEdgeInsets insets) {
+    WCK_TRANSFORM_BODY(sOriginalInsets(image,cmd,insets));
+}
+static id WCKSVGResize(id image, SEL cmd, UIEdgeInsets insets, UIImageResizingMode mode) {
+    WCK_TRANSFORM_BODY(sOriginalResize(image,cmd,insets,mode));
+}
+static id WCKSVGAlign(id image, SEL cmd, UIEdgeInsets insets) {
+    WCK_TRANSFORM_BODY(sOriginalAlign(image,cmd,insets));
+}
+#undef WCK_TRANSFORM_BODY
 
 static WCKSVGDriver *WCKDriver(UIView *view, BOOL create) {
     WCKSVGDriver *driver = objc_getAssociatedObject(view, &sDriverKey);
@@ -242,6 +292,40 @@ void WCKInstallSVG(void) {
         WCKSVGHookStatus(@"named", named); WCKSVGHookStatus(@"file", file);
         WCKSVGHookStatus(@"config", config); WCKSVGHookStatus(@"adapted", adapted);
         WCKSVGHookStatus(@"data", data);
+        const char *oneObject[] = {"@"}, *objectSize[] = {"@", @encode(CGSize)};
+        const char *alphaArgs[] = {"@", "@", "d"}, *rotateArgs[] = {"@", "@", "d", "d"};
+        const char *sizeColorArgs[] = {"@", @encode(CGSize), "@"};
+        const char *resizeDataArgs[] = {"@", @encode(CGSize), "d"};
+        BOOL simple = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:"), (IMP)WCKSVGSimple,
+            (IMP *)&sOriginalSimple, "@", oneObject, 1);
+        BOOL color = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:color:"), (IMP)WCKSVGColor,
+            (IMP *)&sOriginalColor, "@", configArgs, 2);
+        BOOL alpha = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:color:alpha:"), (IMP)WCKSVGAlpha,
+            (IMP *)&sOriginalAlpha, "@", alphaArgs, 3);
+        BOOL rotate = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:color:alpha:rotate:"), (IMP)WCKSVGRotate,
+            (IMP *)&sOriginalRotate, "@", rotateArgs, 4);
+        BOOL size = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:size:"), (IMP)WCKSVGSize,
+            (IMP *)&sOriginalSize, "@", objectSize, 2);
+        BOOL sizeColor = WCKInstallHook(cls, NSSelectorFromString(@"imageNamed:size:color:"), (IMP)WCKSVGSizeColor,
+            (IMP *)&sOriginalSizeColor, "@", sizeColorArgs, 3);
+        BOOL resizeData = WCKInstallHook(cls, NSSelectorFromString(@"imageData:resize:scale:"), (IMP)WCKSVGResizeData,
+            (IMP *)&sOriginalResizeData, "@", resizeDataArgs, 3);
+        WCKSVGHookStatus(@"simple", simple); WCKSVGHookStatus(@"color", color);
+        WCKSVGHookStatus(@"alpha", alpha); WCKSVGHookStatus(@"rotate", rotate);
+        WCKSVGHookStatus(@"size", size); WCKSVGHookStatus(@"sizeColor", sizeColor);
+        WCKSVGHookStatus(@"resizeData", resizeData);
+        const char *modeArgs[] = {@encode(UIImageRenderingMode)};
+        const char *insetArgs[] = {@encode(UIEdgeInsets)};
+        const char *resizeArgs[] = {@encode(UIEdgeInsets), @encode(UIImageResizingMode)};
+        BOOL mode = WCKInstallHook(UIImage.class, @selector(imageWithRenderingMode:),
+            (IMP)WCKSVGMode, (IMP *)&sOriginalMode, "@", modeArgs, 1);
+        BOOL insets = WCKInstallHook(UIImage.class, @selector(resizableImageWithCapInsets:),
+            (IMP)WCKSVGInsets, (IMP *)&sOriginalInsets, "@", insetArgs, 1);
+        BOOL resize = WCKInstallHook(UIImage.class, @selector(resizableImageWithCapInsets:resizingMode:),
+            (IMP)WCKSVGResize, (IMP *)&sOriginalResize, "@", resizeArgs, 2);
+        BOOL align = WCKInstallHook(UIImage.class, @selector(imageWithAlignmentRectInsets:),
+            (IMP)WCKSVGAlign, (IMP *)&sOriginalAlign, "@", insetArgs, 1);
+        WCKSetModuleStatus(@"svgTint.transforms", mode && insets && resize && align ? @"ready" : @"部分图像变换来源保留不可用");
         const char *imageArgs[] = {"@"};
         const char *buttonArgs[] = {"@", @encode(UIControlState)};
         BOOL image = WCKInstallHook(UIImageView.class, @selector(setImage:),
@@ -267,6 +351,7 @@ void WCKInstallSVG(void) {
                 }];
         }
         // A missing optional entry never disables the other validated factories.
-        WCKSetModuleStatus(@"svgTint", named || file || config || adapted || data ? @"ready" : @"SVG工厂不可用");
+        WCKSetModuleStatus(@"svgTint", named || file || config || adapted || data ||
+            simple || color || alpha || rotate || size || sizeColor || resizeData ? @"ready" : @"SVG工厂不可用");
     });
 }

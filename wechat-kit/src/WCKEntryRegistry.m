@@ -58,7 +58,7 @@ BOOL WCKRegisterPluginEntry(void) {
         if (!readable) { WCKSetModuleStatus(@"pluginHubEntry", @"收纳模型不匹配"); return NO; }
         // WCPluginModel.controller is NSString; the hub calls NSClassFromString on open.
         ((void (*)(id, SEL, id, id, id))objc_msgSend)(hub, registration,
-            @"WeChatKit", @"0.1.0-alpha4", WCKControllerName);
+            @"WeChatKit", @"0.1.0-alpha5", WCKControllerName);
         NSArray *after = WCKReadHubPlugins(hub);
         BOOL present = after && WCKHubContainsController(after, &readable);
         WCKSetModuleStatus(@"pluginHubEntry", present ? @"ready" : @"登记未回读；使用兜底");

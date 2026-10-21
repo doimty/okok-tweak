@@ -6,6 +6,19 @@
 static char sKeyboardDriverKey;
 static NSHashTable *sKeyboardDrivers;
 static void (*sOriginalMove)(UIView *, SEL);
+static void (*sOriginalLayout)(UIView *, SEL);
+
+// Bound the walk and require genuine membership. No foreign controls/recording
+// gestures are accepted even when another plugin gives us a synthetic touch.
+static BOOL WCKKeyboardContains(UIView *root, UIView *view, BOOL excludeControls) {
+    if (!root || !view) return NO;
+    for (NSUInteger depth = 0; view && depth < 32; ++depth, view = view.superview) {
+        if (view.hidden || view.alpha < 0.01) return NO;
+        if (view == root) return YES;
+        if (excludeControls && [view isKindOfClass:UIControl.class]) return NO;
+    }
+    return NO;
+}
 
 @interface WCKKeyboardDriver : NSObject <UIGestureRecognizerDelegate>
 @property (nonatomic, weak) UIView *host;
@@ -23,14 +36,28 @@ static void (*sOriginalMove)(UIView *, SEL);
     UIView *host = self.host;
     if (!host.window || !WCKEnabled(@"keyboardSwipe") || host.hidden || host.alpha < 0.01)
         return NO;
+    if (recognizer != self.swipe || recognizer.view != host) return NO;
     // Never steal the voice-record, send, attachment or expression buttons.
-    for (UIView *view = touch.view; view && view != host; view = view.superview)
-        if ([view isKindOfClass:UIControl.class]) return NO;
-    return YES;
+    return WCKKeyboardContains(host, touch.view, YES);
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer
+        shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    UIView *host = self.host;
+    if (recognizer != self.swipe || recognizer.view != host || !host.window ||
+        !WCKEnabled(@"keyboardSwipe") || ![other isKindOfClass:UIPanGestureRecognizer.class] ||
+        ![other.view isKindOfClass:UIScrollView.class] ||
+        ((UIScrollView *)other.view).panGestureRecognizer != other ||
+        !WCKKeyboardContains(host, other.view, YES)) return NO;
+    SEL getter = NSSelectorFromString(@"getGrowTextView");
+    if (!WCKMethodMatches(object_getClass(host), getter, "@", NULL, 0)) return NO;
+    id text = ((id (*)(id,SEL))objc_msgSend)(host, getter);
+    return [text isKindOfClass:UIView.class] && WCKKeyboardContains(text, other.view, YES);
 }
 - (void)swiped:(UISwipeGestureRecognizer *)gesture {
     UIView *host = self.host;
-    if (gesture.state != UIGestureRecognizerStateRecognized || !host.window ||
+    if (gesture != self.swipe || gesture.view != host ||
+        gesture.state != UIGestureRecognizerStateRecognized || !host.window ||
+        host.hidden || host.alpha < 0.01 ||
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
         !WCKEnabled(@"keyboardSwipe")) return;
     SEL controllerSelector = NSSelectorFromString(@"getViewController");
@@ -42,12 +69,12 @@ static void (*sOriginalMove)(UIView *, SEL);
     if (vc.presentedViewController || (vc.navigationController &&
         vc.navigationController.topViewController != vc)) return;
     // Use the host's normal responder state machine; do not set private ivars/mode numbers.
-    [host becomeFirstResponder];
+    BOOL accepted = [host becomeFirstResponder];
+    WCKSetModuleStatus(@"keyboardSwipe.debug.last", accepted ? @"已请求输入栏响应" : @"输入栏拒绝响应");
 }
 @end
 
-static void WCKKeyboardMoved(UIView *host, SEL selector) {
-    if (sOriginalMove) sOriginalMove(host, selector);
+static void WCKBindKeyboard(UIView *host) {
     if (!NSThread.isMainThread) return;
     WCKKeyboardDriver *driver = objc_getAssociatedObject(host, &sKeyboardDriverKey);
     if (!driver && host.window) {
@@ -66,15 +93,28 @@ static void WCKKeyboardMoved(UIView *host, SEL selector) {
     [driver refresh];
 }
 
+static void WCKKeyboardMoved(UIView *host, SEL selector) {
+    if (sOriginalMove) sOriginalMove(host, selector);
+    WCKBindKeyboard(host);
+}
+static void WCKKeyboardLayout(UIView *host, SEL selector) {
+    if (sOriginalLayout) sOriginalLayout(host, selector);
+    WCKBindKeyboard(host); // MMInputToolView only. Never traverse windows/chat contents.
+}
+
 void WCKInstallKeyboard(void) {
     Class cls = NSClassFromString(@"MMInputToolView");
     if (!WCKMethodMatches(cls, NSSelectorFromString(@"getViewController"), "@", NULL, 0) ||
+        !WCKMethodMatches(cls, NSSelectorFromString(@"getGrowTextView"), "@", NULL, 0) ||
         !WCKMethodMatches(cls, @selector(becomeFirstResponder), @encode(BOOL), NULL, 0)) {
         WCKSetModuleStatus(@"keyboardSwipe", @"ABI 不匹配"); return;
     }
     sKeyboardDrivers = [NSHashTable weakObjectsHashTable];
-    BOOL installed = WCKInstallHook(cls, @selector(didMoveToWindow), (IMP)WCKKeyboardMoved,
+    BOOL moved = WCKInstallHook(cls, @selector(didMoveToWindow), (IMP)WCKKeyboardMoved,
         (IMP *)&sOriginalMove, "v", NULL, 0);
+    BOOL layout = WCKInstallHook(cls, @selector(layoutSubviews), (IMP)WCKKeyboardLayout,
+        (IMP *)&sOriginalLayout, "v", NULL, 0);
+    BOOL installed = moved || layout;
     WCKSetModuleStatus(@"keyboardSwipe", installed ? @"ready" : @"Hook 不可用");
     if (installed) {
         // NotificationCenter retains this process-lifetime observer; no view controller captured.
