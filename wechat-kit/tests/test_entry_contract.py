@@ -41,9 +41,9 @@ class EntryContracts(unittest.TestCase):
         self.assertIn('@finally { sRegistrationInProgress = NO; }',registry)
         self.assertIn('[value count] > 2048',registry)
     def test_build_metadata_and_native_test(self):
-        self.assertIn('Version: 0.1.0-alpha2',(root/'control').read_text())
+        self.assertIn('Version: 0.1.0-alpha3',(root/'control').read_text())
         self.assertIn('src/WCKEntryRegistry.m src/WCKEntryUI.m',(root/'Makefile').read_text())
-        self.assertIn('"0.1.0-alpha2"',registry)
+        self.assertIn('"0.1.0-alpha3"',registry)
         native=(root/'tests/run_entry_native.py').read_text()
         for x in ['COMPILE FAILED','wrong_abi','absent_then_late','mutant-no-registration','mutant-no-dedupe']:
             self.assertIn(x,native)

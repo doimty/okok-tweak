@@ -1,5 +1,6 @@
 #import "WCKRuntime.h"
 #import "WCKPolicy.h"
+#import "WCKHostIdentity.h"
 #import "WCKSettings.h"
 #import <dlfcn.h>
 #import <stdlib.h>
@@ -11,16 +12,24 @@ static NSMutableDictionary<NSString *, NSString *> *sStatuses;
 static NSMutableSet<NSString *> *sInstalled;
 
 BOOL WCKHostIsSupported(void) {
-    static BOOL supported;
+    static NSLock *identityLock;
+    static BOOL cached, supported;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-        id version = info[@"CFBundleShortVersionString"], build = info[@"CFBundleVersion"];
-        supported = WCKHostMatches(NSBundle.mainBundle.bundleIdentifier.UTF8String,
-            [version isKindOfClass:NSString.class] ? [version UTF8String] : NULL,
-            [build isKindOfClass:NSString.class] ? [build UTF8String] : NULL);
-    });
-    return supported;
+    dispatch_once(&once, ^{ identityLock = [NSLock new]; });
+    [identityLock lock];
+    @try {
+        if (!cached) {
+            BOOL readable = NO;
+            supported = WCKHostMatchesBundle(NSBundle.mainBundle, &readable);
+            // Cache stable identities (including unsupported builds), not transient I/O failure.
+            cached = readable;
+        }
+        return supported;
+    } @catch (__unused NSException *exception) {
+        // Never turn a property/I/O exception into an allow or a permanent negative cache.
+        supported = NO; cached = NO;
+        return NO;
+    } @finally { [identityLock unlock]; }
 }
 
 static void WCKInitRegistry(void) {
