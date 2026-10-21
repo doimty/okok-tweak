@@ -73,7 +73,10 @@ class SettingsContract(unittest.TestCase):
         self.assertIn('isEqualToString:@"ready"', self.vm)
         self.assertIn("toggle.enabled = canEnable || stored;", self.vm)
         self.assertIn("sender.isOn && !canEnable", self.vm)
-        self.assertIn("没有改色", self.vm)
+        self.assertIn("留空为全局 SVG 改色", self.vm)
+        self.assertIn("总开关关闭，当前不生效", self.vm)
+        self.assertIn("同时开启总开关", self.vm)
+        self.assertNotIn("留空表示没有改色", self.vm)
 
     def test_ui_and_independence(self):
         self.assertIn("UITableViewStyleInsetGrouped", self.vm)

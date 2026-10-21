@@ -47,8 +47,12 @@ int main(void) {
     CHECK(!WCKNameInCSV(NULL,NULL));
     CHECK(WCKShouldTintName("icon_a","icon_a,icon_b","icon_c"));
     CHECK(!WCKShouldTintName("icon_a","icon_a","icon_a"));
-    CHECK(!WCKShouldTintName("icon_a","",""));
+    CHECK(WCKShouldTintName("icon_a","",""));
+    CHECK(WCKShouldTintName("icon_a"," , \t, ",""));
+    CHECK(!WCKShouldTintName("icon_a","","icon_a"));
     CHECK(!WCKShouldTintName("icon_a","icon_b",""));
+    CHECK(!WCKShouldTintName("", "", ""));
+    CHECK(!WCKShouldTintName(NULL, "", ""));
     CHECK(!WCKShouldTintName("icon_a",NULL,NULL));
     printf("WCK production policy: %u assertions PASS\n",checks);
     return 0;

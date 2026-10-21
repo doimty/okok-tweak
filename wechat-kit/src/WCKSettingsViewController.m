@@ -32,7 +32,7 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
         rows = @[
             @{@"key": @"svgTintLight", @"module": @"svgTint", @"title": @"浅色图标颜色", @"help": @"请输入 #RRGGBB，例如 #07C160。"},
             @{@"key": @"svgTintDark", @"module": @"svgTint", @"title": @"深色图标颜色", @"help": @"请输入 #RRGGBB，例如 #07C160。"},
-            @{@"key": @"svgInclude", @"module": @"svgTint", @"title": @"包含图标名单", @"help": @"逗号分隔，最多 2048 字符。留空表示没有改色，不是全局改色。"},
+            @{ @"key": @"svgInclude", @"module": @"svgTint", @"title": @"限定图标名单（可选）", @"help": @"留空为全局 SVG 改色；填写后仅改名单内图标。逗号分隔，最多 2048 字符，排除优先。"},
             @{@"key": @"svgExclude", @"module": @"svgTint", @"title": @"排除图标名单", @"help": @"逗号分隔，最多 2048 字符。排除名单优先。"},
             @{@"key": @"momentsFormat", @"module": @"momentsTime", @"title": @"时间格式", @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}
         ];
@@ -68,6 +68,18 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     [super viewDidLoad];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 72;
+    self.edgesForExtendedLayout = UIRectEdgeNone;
+    self.extendedLayoutIncludesOpaqueBars = NO;
+    self.tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentAutomatic;
+    // Per-item appearances: never alter the host navigation bar or other plugin pages.
+    UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+    self.navigationItem.compactScrollEdgeAppearance = appearance;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(settingsChanged:)
         name:WCKSettingsDidChangeNotification object:self.settings];
     [self refreshState];
@@ -134,7 +146,10 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     if (!row[@"key"]) {
         text = @"待实现，暂无可用开关";
     } else if ([self isReady:row[@"id"]]) {
-        text = @"已就绪，尚未真机验证";
+        BOOL master = [self.settings boolForKey:@"enabled"];
+        BOOL feature = [self.settings boolForKey:row[@"key"]];
+        text = !master ? @"总开关关闭，当前不生效" :
+            (feature ? @"已开启，尚未完成效果验收" : @"已接入，当前关闭");
     } else if ([status isKindOfClass:NSString.class] && status.length) {
         text = [@"未就绪：" stringByAppendingString:status];
     } else {
@@ -163,7 +178,7 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     return @[
         @"默认全部关闭。总开关关闭时所有功能均不生效。不保存账号或聊天内容。",
         @"仅宿主支持且状态已就绪的项目可开启；未完成项保留说明。已存开关仍可关闭。",
-        @"功能已就绪且宿主支持时可编辑。名单用逗号分隔；包含名单为空时不改任何图标，排除优先。",
+        @"全局改色仅针对微信 SVG，不修改照片或头像。留空即全局，名单仅作可选限制，排除优先。修改后刷新已跟踪图标；未显示过的页面下次打开时应用。",
         @"功能已就绪且宿主支持时可编辑。默认 yyyy-MM-dd HH:mm:ss。"
     ][section];
 }
@@ -205,7 +220,7 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
         BOOL editable = self.hostSupported && [self isReady:row[@"module"]];
         cell.textLabel.text = row[@"title"];
         cell.detailTextLabel.text = value.length ? value :
-            ([row[@"key"] isEqualToString:@"svgInclude"] ? @"空（不改任何图标）" : @"空");
+            ([row[@"key"] isEqualToString:@"svgInclude"] ? @"全局 SVG（无名单限制）" : @"空");
         cell.textLabel.enabled = editable;
         cell.detailTextLabel.enabled = editable;
         cell.accessoryType = editable ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
@@ -230,7 +245,28 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     if (![self.settings setObject:@(sender.isOn) forKey:key error:&error]) {
         [self refreshState];
         [self showError:error];
+        return;
     }
+    if (sender.isOn && ![key isEqualToString:@"enabled"] &&
+        ![self.settings boolForKey:@"enabled"]) [self showMasterOffNotice];
+}
+
+- (void)showMasterOffNotice {
+    if (self.presentedViewController) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"总开关仍关闭"
+        message:@"子开关已保存，但功能不会执行。是否同时开启 WeChatKit 总开关？"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"保持关闭" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"同时开启总开关" style:UIAlertActionStyleDefault
+        handler:^(UIAlertAction *action) {
+            (void)action;
+            typeof(self) self = weakSelf;
+            if (!self || ![self canEnableKey:@"enabled"]) return;
+            NSError *error = nil;
+            if (![self.settings setObject:@YES forKey:@"enabled" error:&error]) [self showError:error];
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {

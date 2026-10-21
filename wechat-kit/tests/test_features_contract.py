@@ -26,12 +26,15 @@ class FeatureContracts(unittest.TestCase):
                   'navigationController.topViewController != vc','[host becomeFirstResponder]']:
             self.assertIn(s,src)
         self.assertNotIn('setValue:',src)
-    def test_svg_no_shared_mutation(self):
+    def test_svg_global_source_and_no_caller_mutation(self):
         src=(root/'src/WCKSVG.m').read_text()
-        for s in ['WCKShouldTintName','imageConfigWithTintColor:bounds:rotationAngle:opacity:scale:',
-                  'object_getClass(config) != configClass','copy ?: config','named && config']:
+        policy=(root/'src/WCKPolicy.c').read_text()
+        self.assertIn('!restricted || WCKNameInCSV(name, include)',policy)
+        for s in ['WCKSVGSelectRGB(WCKSettings.shared.snapshot, descriptor.name,',
+                  'existing ? existing.source : result','named || file || config || adapted || data',
+                  'objc_setAssociatedObject(image, &sDescriptorKey','sFactoryDepth++ == 0']:
             self.assertIn(s,src)
-        for s in ['setTintColor:', 'UIImage.class', 'NSURLSession']:
+        for s in ['setTintColor:', 'imageConfigWithTintColor:', 'NSURLSession']:
             self.assertNotIn(s,src)
     def test_unread_only_action_and_bounded(self):
         src=(root/'src/WCKReadAll.m').read_text()

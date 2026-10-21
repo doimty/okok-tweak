@@ -7,7 +7,8 @@ source=(root/'src/WCKPolicy.c').read_text()
 variants={
  'baseline':source,
  'mutant-version-bypass':source.replace('strcmp(version, "8.0.69") == 0 && strcmp(build, "8.0.69.33") == 0','true'),
- 'mutant-allow-all-svg':source.replace('WCKNameInCSV(name, include) && !WCKNameInCSV(name, exclude)','((void)include, !WCKNameInCSV(name, exclude))'),
+ 'mutant-empty-list-no-tint':source.replace('(!restricted || WCKNameInCSV(name, include)) && !WCKNameInCSV(name, exclude)','((void)restricted, WCKNameInCSV(name, include)) && !WCKNameInCSV(name, exclude)'),
+ 'mutant-ignore-exclusion':source.replace('&& !WCKNameInCSV(name, exclude)','&& ((void)exclude, true)'),
  'mutant-block-as-object':source.replace('return strcmp(actual, "@") == 0 ||','return actual[0] == \'@\' ||'),
 }
 results=[]

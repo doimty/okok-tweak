@@ -56,6 +56,10 @@ bool WCKNameInCSV(const char *name, const char *csv) {
 }
 
 bool WCKShouldTintName(const char *name, const char *include, const char *exclude) {
-    // Empty allowlist means change nothing, never apply a broad global tint.
-    return WCKNameInCSV(name, include) && !WCKNameInCSV(name, exclude);
+    if (!name || !*name || !include || !exclude) return false;
+    // The user-selected global mode is the default: an empty/blank CSV is no restriction.
+    bool restricted = false;
+    for (const char *p = include; *p; ++p)
+        if (*p != ',' && !isspace((unsigned char)*p)) { restricted = true; break; }
+    return (!restricted || WCKNameInCSV(name, include)) && !WCKNameInCSV(name, exclude);
 }
