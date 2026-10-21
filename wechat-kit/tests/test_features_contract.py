@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Source-only feature wiring contracts. Not a UIKit/WeChat behavioral test."""
+from pathlib import Path
+import unittest, plistlib
+root=Path(__file__).resolve().parents[1]
+class FeatureContracts(unittest.TestCase):
+    def test_exact_host_bundle(self):
+        p=plistlib.loads((root/'WeChatKit.plist').read_bytes())
+        self.assertEqual(p['Filter']['Bundles'],['com.tencent.xin'])
+    def test_enable_snapshot_and_state(self):
+        src=(root/'src/WCKRuntime.m').read_text()
+        body=src.split('BOOL WCKEnabled(',1)[1].split('BOOL WCKMethodMatches(',1)[0]
+        for phrase in ['WCKHostIsSupported()', 'WCKRuntimeStatuses()[feature]', 'isEqualToString:@"ready"',
+                       'snapshot[@"enabled"]', 'snapshot[feature]']:
+            self.assertIn(phrase,body)
+    def test_hook_fail_original(self):
+        src=(root/'src/WCKRuntime.m').read_text()
+        self.assertLess(src.index('*original = fallback;'),src.index('hook(cls, selector, replacement, original);'))
+        self.assertIn('if (!*original) { *original = fallback; return NO; }',src)
+        self.assertIn('method_getNumberOfArguments(method) != count + 2',src)
+    def test_local_reversible_keyboard(self):
+        src=(root/'src/WCKKeyboard.m').read_text()
+        for s in ['NSClassFromString(@"MMInputToolView")','isKindOfClass:UIControl.class',
+                  'cancelsTouchesInView = NO','NSHashTable weakObjectsHashTable',
+                  'objc_getAssociatedObject(host','self.swipe.enabled = WCKEnabled',
+                  'navigationController.topViewController != vc','[host becomeFirstResponder]']:
+            self.assertIn(s,src)
+        self.assertNotIn('setValue:',src)
+    def test_svg_no_shared_mutation(self):
+        src=(root/'src/WCKSVG.m').read_text()
+        for s in ['WCKShouldTintName','imageConfigWithTintColor:bounds:rotationAngle:opacity:scale:',
+                  'object_getClass(config) != configClass','copy ?: config','named && config']:
+            self.assertIn(s,src)
+        for s in ['setTintColor:', 'UIImage.class', 'NSURLSession']:
+            self.assertNotIn(s,src)
+    def test_unread_only_action_and_bounded(self):
+        src=(root/'src/WCKReadAll.m').read_text()
+        for s in ['UIGestureRecognizerStateBegan','self.busy','[raw count] > 5000',
+                  'MIN(index + 16, names.count)','ClearUnRead:FromID:ToID:',
+                  '(manager, clearSelector, name, 0, UINT32_MAX)',
+                  'WCKServiceCenter() != center','tabBarItemViews','tabs.selectedIndex != 0',
+                  'if (!after) ++cleared']:
+            self.assertIn(s,src)
+        for s in ['DeleteSession','DeleteMsgButKeepSession','RemoveMessages','NSLog(']:
+            self.assertNotIn(s,src)
+    def test_no_phony_unimplemented(self):
+        src=(root/'src/WCKVerifiedFeatures.m').read_text()
+        self.assertIn('WCKInstallReadAll()',src)
+        self.assertNotIn('@"ready"',src)
+        for s in ['albumSheet','momentsTime','noHotUpdate']:
+            self.assertIn(s,src)
+    def test_preserves_settings_bar(self):
+        src=(root/'src/WCKBootstrap.m').read_text()
+        self.assertIn('[existing containsObject:item]',src)
+        self.assertIn('[next addObject:item]',src)
+        self.assertIn('if (!WCKHostIsSupported()) return;',src)
+        self.assertIn('sSettingsHookReady = loaded && appeared',src)
+    def test_independent_runtime(self):
+        src='\n'.join(p.read_text() for p in (root/'src').glob('*') if p.suffix in ('.h','.c','.m'))
+        for forbidden in ['WCRefine','WCPulse','WeX','https://','NSURLConnection',
+                          'NSURLSession','dlopen(', 'frida','system(', 'sbreload']:
+            self.assertNotIn(forbidden,src)
+if __name__=='__main__':unittest.main(verbosity=2)

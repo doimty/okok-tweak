@@ -1,0 +1,90 @@
+name: Build WeChatKit alpha1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/wechatkit-alpha1-build-20261021]
+    paths:
+      - 'wechat-kit/**'
+      - '.github/workflows/build-wechatkit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: WeChatKit alpha1 (roothide)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      THEOS: ${{ github.workspace }}/.build-wechatkit-theos
+      THEOS_PACKAGE_SCHEME: roothide
+      FINALPACKAGE: '1'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record Apple toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun clang --version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Host policy and source contracts
+        working-directory: wechat-kit
+        run: |
+          set -euo pipefail
+          ulimit -c 0
+          python3 tests/run_policy.py
+          python3 tests/test_settings_contract.py
+          python3 tests/test_features_contract.py
+      - name: Install packaging dependencies
+        run: |
+          set -euo pipefail
+          for formula in dpkg ldid make libplist; do
+            brew list --versions "$formula" >/dev/null 2>&1 || brew install "$formula"
+          done
+      - name: Prepare pinned RootHide Theos
+        run: |
+          set -euo pipefail
+          git clone --no-checkout https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" fetch --depth 1 origin 88506b2c22e9e07dd4ed055f23c9e398a117a2c7
+          git -C "$THEOS" checkout --detach 88506b2c22e9e07dd4ed055f23c9e398a117a2c7
+          git -C "$THEOS" submodule update --init --recursive
+          git -C "$THEOS" rev-parse HEAD
+      - name: Prepare pinned SDK and record actual version
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git /tmp/wechatkit-sdks
+          git -C /tmp/wechatkit-sdks fetch --depth 1 origin 0222fd5413cf4b9af096f37b4621afa2688572f7
+          git -C /tmp/wechatkit-sdks sparse-checkout set iPhoneOS16.5.sdk
+          git -C /tmp/wechatkit-sdks checkout --detach 0222fd5413cf4b9af096f37b4621afa2688572f7
+          mkdir -p "$THEOS/sdks"
+          cp -R /tmp/wechatkit-sdks/iPhoneOS16.5.sdk "$THEOS/sdks/"
+          cat "$THEOS/sdks/iPhoneOS16.5.sdk/SDKSettings.json"
+      - name: Compile and package candidate
+        working-directory: wechat-kit
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/opt/make/libexec/gnubin:/usr/local/opt/make/libexec/gnubin:$THEOS/bin:$PATH"
+          make clean
+          make package messages=yes 2>&1 | tee build.log
+          ls -l packages/
+      - name: Inspect deb without installing
+        working-directory: wechat-kit
+        run: |
+          set -euo pipefail
+          for package in packages/*.deb; do
+            dpkg-deb -I "$package"
+            dpkg-deb -c "$package"
+            shasum -a 256 "$package"
+          done
+      - name: Upload candidate and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wechatkit-alpha1-roothide
+          path: |
+            wechat-kit/packages/*.deb
+            wechat-kit/build.log
+            wechat-kit/evidence/host-policy-tests.json
+          if-no-files-found: warn

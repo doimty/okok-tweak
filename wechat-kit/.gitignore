@@ -1,0 +1,11 @@
+.theos/
+.build-theos/
+packages/
+build.log
+__pycache__/
+*.pyc
+.DS_Store
+evidence/cross-*/
+tests/.build-settings/
+# Evidence includes local proprietary dumps: keep it local, never publish it.
+evidence/
