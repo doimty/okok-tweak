@@ -9,13 +9,13 @@ if sys.platform!='darwin':
 cases=['normal','duplicate','preserve_neighbor','existing','absent_then_late','nil_then_ready',
        'invalid_list','unreadable_model','readback_failure','partial_throw','unsupported','background','wrong_abi']
 source=(root/'src/WCKEntryRegistry.m').read_text()
-call='((void (*)(id, SEL, id, id, id))objc_msgSend)(hub, registration,\n            @"WeChatKit", @"0.1.0-alpha5", WCKControllerName);'
+call='((void (*)(id, SEL, id, id, id))objc_msgSend)(hub, registration,\n            @"WeChatKit", @"0.1.0-alpha6", WCKControllerName);'
 assert source.count(call)==1
 variants={
  'baseline':source,
  'mutant-no-registration':source.replace(call,'(void)registration;'),
  'mutant-no-dedupe':source.replace('if (WCKHubContainsController(before, &readable)) {','if (WCKHubContainsController(before, &readable) && NO) {'),
- 'mutant-Class-not-NSString':source.replace('0.1.0-alpha5", WCKControllerName);','0.1.0-alpha5", (id)NSClassFromString(WCKControllerName));'),
+ 'mutant-Class-not-NSString':source.replace('0.1.0-alpha6", WCKControllerName);','0.1.0-alpha6", (id)NSClassFromString(WCKControllerName));'),
 }
 results=[]
 with tempfile.TemporaryDirectory(prefix='wck-native-entry-') as td:
