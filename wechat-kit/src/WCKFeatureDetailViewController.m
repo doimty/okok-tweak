@@ -139,6 +139,7 @@
             slider.maximumValue = (float)maximum;
             slider.value = (float)MIN(maximum, MAX(minimum, value));
             slider.enabled = editable;
+            slider.tag = path.row;   // several sliders share this page
             slider.accessibilityIdentifier = [@"wck.feature.slider." stringByAppendingString:row[@"key"]];
             [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
             [slider addTarget:self action:@selector(sliderCommitted:) forControlEvents:
@@ -190,12 +191,12 @@
 
 - (void)sliderChanged:(UISlider *)sender {
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:
-        [NSIndexPath indexPathForRow:0 inSection:2]];
+        [NSIndexPath indexPathForRow:sender.tag inSection:2]];
     if (cell) cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", sender.value];
 }
 
 - (void)sliderCommitted:(UISlider *)sender {
-    NSDictionary<NSString *, id> *row = [self extraRowAtRow:0];
+    NSDictionary<NSString *, id> *row = [self extraRowAtRow:sender.tag];
     if (!row) return;
     NSError *error = nil;
     if (![self.settings setObject:@(round(sender.value)) forKey:row[@"key"] error:&error]) {

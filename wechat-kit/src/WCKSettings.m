@@ -22,6 +22,8 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
             @"svgUseFixedColor": @YES, @"svgPaletteHexes": WCKDefaultSVGPalette(),
             @"svgRandomAlpha": @1.0,
             @"cornersRadius": @12.0, @"cornersScope": @"list",
+            @"cornersMargin": @8.0, @"cornersSpacing": @6.0, @"cornersStrokeWidth": @0.0,
+            @"cornersFill": @"", @"cornersStrokeColor": @"",
             @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
         };
     });
@@ -67,6 +69,14 @@ static id WCKValidatedValue(NSString *key, id value) {
             if (!isfinite(radius)) return nil;
             return @(MIN(24.0, MAX(0.0, radius)));
         }
+        if ([key isEqualToString:@"cornersMargin"] || [key isEqualToString:@"cornersSpacing"] ||
+            [key isEqualToString:@"cornersStrokeWidth"]) {
+            if (isBoolean) return nil;
+            double number = [value doubleValue];
+            if (!isfinite(number)) return nil;
+            double high = [key isEqualToString:@"cornersStrokeWidth"] ? 4.0 : 24.0;
+            return @(MIN(high, MAX(0.0, number)));
+        }
         if (!isBoolean) return nil;
         return @([value boolValue]);
     }
@@ -77,6 +87,10 @@ static id WCKValidatedValue(NSString *key, id value) {
          WCKMaximumCSVLength : 7);
     if (text.length > limit ||
         [text rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound) return nil;
+    if ([key isEqualToString:@"cornersFill"] || [key isEqualToString:@"cornersStrokeColor"]) {
+        // Empty means "leave the host colour alone".
+        return text.length == 0 ? @"" : WCKNormalizeHex(text);
+    }
     if ([key isEqualToString:@"svgTintLight"] || [key isEqualToString:@"svgTintDark"]) {
         if (text.length != 7 || [text characterAtIndex:0] != '#') return nil;
         for (NSUInteger i = 1; i < 7; i++) {

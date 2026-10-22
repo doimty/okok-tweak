@@ -42,6 +42,17 @@ class CornersContract(unittest.TestCase):
   self.assertIn('WCKRefreshCorners',corners)
   self.assertIn('WCKSettingsDidChangeNotification',corners)
 
+ def test_card_layout_parameters(self):
+  for key in ['cornersMargin','cornersSpacing','cornersStrokeWidth','cornersFill','cornersStrokeColor']:
+   self.assertIn(key,(root/'src/WCKSettings.m').read_text())
+   self.assertIn(key,page)
+  self.assertIn('WCKApplyCardLayout',corners)
+  self.assertIn('CGRectInset(bounds, margin, spacing / 2.0)',corners)
+  self.assertIn('WCKInstallHook(UITableViewCell.class, @selector(layoutSubviews)',corners)
+  # Every slider must carry its row, otherwise it writes the first row.
+  self.assertIn('slider.tag = path.row;',detail)
+  self.assertIn('extraRowAtRow:sender.tag',detail)
+
  def test_page_exposes_slider_and_choice(self):
   self.assertIn('@"type": @"slider"',page)
   self.assertIn('@"type": @"choice"',page)

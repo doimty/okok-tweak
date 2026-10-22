@@ -29,7 +29,9 @@ class SettingsContract(unittest.TestCase):
                                "albumSheet", "readAll", "svgTintLight", "svgTintDark",
                                "svgInclude", "svgExclude", "momentsFormat",
                                "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
-                               "cornersRadius", "cornersScope", "corners"})
+                               "cornersRadius", "cornersScope", "corners",
+                               "cornersMargin", "cornersSpacing", "cornersStrokeWidth",
+                               "cornersFill", "cornersStrokeColor"})
         self.assertEqual(defaults.count("@NO"), 7)
         # Palette defaults to a usable non-empty set and fixed mode stays the default.
         self.assertIn('@"svgUseFixedColor": @YES', defaults)
@@ -37,6 +39,9 @@ class SettingsContract(unittest.TestCase):
         self.assertIn('@"svgRandomAlpha": @1.0', defaults)
         self.assertIn('@"cornersRadius": @12.0', defaults)
         self.assertIn('@"cornersScope": @"list"', defaults)
+        self.assertIn('@"cornersMargin": @8.0', defaults)
+        self.assertIn('@"cornersSpacing": @6.0', defaults)
+        self.assertIn('@"cornersFill": @""', defaults)
         self.assertEqual(defaults.count('@"#07C160"'), 2)
         self.assertIn('@"svgInclude": @""', defaults)
         self.assertIn('@"momentsFormat": @"yyyy-MM-dd HH:mm:ss"', defaults)

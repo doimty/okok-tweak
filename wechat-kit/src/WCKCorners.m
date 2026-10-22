@@ -12,6 +12,7 @@
 
 static void (*sOriginalDidMoveToWindow)(id, SEL);
 static void (*sOriginalSetBackgroundColor)(id, SEL, UIColor *);
+static void (*sOriginalCellLayout)(id, SEL);
 
 static NSArray<NSString *> *WCKCornerExcludedClassNames(void) {
     static NSArray *names;
@@ -42,6 +43,30 @@ static double WCKCornerRadius(void) {
     return MIN(24.0, MAX(0.0, radius));
 }
 
+static double WCKCornerNumber(NSString *key, double fallback, double low, double high) {
+    id value = WCKSettings.shared.snapshot[key];
+    if (![value isKindOfClass:NSNumber.class]) return fallback;
+    double number = [value doubleValue];
+    if (!isfinite(number)) return fallback;
+    return MIN(high, MAX(low, number));
+}
+
+static double WCKCornerMargin(void) { return WCKCornerNumber(@"cornersMargin", 8, 0, 24); }
+static double WCKCornerSpacing(void) { return WCKCornerNumber(@"cornersSpacing", 6, 0, 24); }
+static double WCKCornerStrokeWidth(void) { return WCKCornerNumber(@"cornersStrokeWidth", 0, 0, 4); }
+
+static UIColor *WCKCornerColour(NSString *key) {
+    id text = WCKSettings.shared.snapshot[key];
+    if (![text isKindOfClass:NSString.class]) return nil;
+    NSString *hex = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (![hex hasPrefix:@"#"] || hex.length != 7) return nil;
+    unsigned value = 0;
+    if (![[NSScanner scannerWithString:[hex substringFromIndex:1]] scanHexInt:&value]) return nil;
+    return [UIColor colorWithRed:((value >> 16) & 255) / 255.0
+                           green:((value >> 8) & 255) / 255.0
+                            blue:(value & 255) / 255.0 alpha:1];
+}
+
 static BOOL WCKCornerScopeIsAll(void) {
     id scope = WCKSettings.shared.snapshot[@"cornersScope"];
     return [scope isKindOfClass:NSString.class] && [scope isEqualToString:@"all"];
@@ -69,6 +94,38 @@ static BOOL WCKCornerEligible(UIView *view) {
                       [parent isKindOfClass:UICollectionViewCell.class]);
 }
 
+static void WCKApplyCorner(UIView *view);
+
+// Card layout: shrink the cell's content and background so the list reads as
+// separated cards. Everything is recomputed from the cell bounds on every
+// layout, so recycled cells and rotation stay consistent.
+static void WCKApplyCardLayout(UITableViewCell *cell) {
+    if (!NSThread.isMainThread || !WCKEnabled(@"corners") || WCKCornerScopeIsAll()) return;
+    @try {
+        CGRect bounds = cell.bounds;
+        if (bounds.size.width < 2 || bounds.size.height < 2) return;
+        CGFloat margin = (CGFloat)WCKCornerMargin(), spacing = (CGFloat)WCKCornerSpacing();
+        if (margin <= 0 && spacing <= 0) return;
+        CGRect card = CGRectInset(bounds, margin, spacing / 2.0);
+        if (card.size.width <= 1 || card.size.height <= 1) return;
+        UIView *background = cell.backgroundView;
+        if (background && !CGRectEqualToRect(background.frame, card)) background.frame = card;
+        UIView *content = cell.contentView;
+        if (content && !CGRectEqualToRect(content.frame, card)) content.frame = card;
+    } @catch (__unused NSException *exception) {
+        WCKSetModuleStatus(@"corners.debug.last", @"卡片边距调整异常，已跳过");
+    }
+}
+
+static void WCKCornerCellLayout(id cell, SEL cmd) {
+    sOriginalCellLayout(cell, cmd);
+    if (!NSThread.isMainThread) return;
+    WCKApplyCardLayout(cell);
+    WCKApplyCorner(cell);
+    WCKApplyCorner(((UITableViewCell *)cell).contentView);
+    WCKApplyCorner(((UITableViewCell *)cell).backgroundView);
+}
+
 static void WCKApplyCorner(UIView *view) {
     if (!NSThread.isMainThread || !WCKEnabled(@"corners")) return;
     @try {
@@ -85,7 +142,17 @@ static void WCKApplyCorner(UIView *view) {
         }
         // Only clip when this view itself paints; otherwise children may need
         // to draw outside (badges, shadows, popovers).
-        layer.masksToBounds = WCKPaintsBackground(view);
+        UIColor *fill = WCKCornerColour(@"cornersFill");
+        if (fill && ![view.backgroundColor isEqual:fill]) view.backgroundColor = fill;
+        CGFloat stroke = (CGFloat)WCKCornerStrokeWidth();
+        UIColor *strokeColour = WCKCornerColour(@"cornersStrokeColor");
+        if (stroke > 0.05 && strokeColour) {
+            layer.borderWidth = stroke;
+            layer.borderColor = strokeColour.CGColor;
+        } else if (layer.borderWidth != 0) {
+            layer.borderWidth = 0;
+        }
+        layer.masksToBounds = WCKPaintsBackground(view);   // a border needs no clipping
     } @catch (__unused NSException *exception) {
         WCKSetModuleStatus(@"corners.debug.last", @"圆角设置异常，已跳过该视图");
     }
@@ -133,6 +200,13 @@ void WCKInstallCorners(void) {
         BOOL colour = WCKInstallHook(UIView.class, @selector(setBackgroundColor:),
             (IMP)WCKCornerSetBackgroundColor, (IMP *)&sOriginalSetBackgroundColor, "v",
             (const char *[]){ "@" }, 1);
+        BOOL table = WCKInstallHook(UITableViewCell.class, @selector(layoutSubviews),
+            (IMP)WCKCornerCellLayout, (IMP *)&sOriginalCellLayout, "v", NULL, 0);
+        BOOL collection = table;
+        if (!collection) {
+            collection = WCKInstallHook(UICollectionViewCell.class, @selector(layoutSubviews),
+                (IMP)WCKCornerCellLayout, (IMP *)&sOriginalCellLayout, "v", NULL, 0);
+        }
         WCKSetModuleStatus(@"corners", hook && colour ? @"ready" : @"圆角 hook 不可用");
         if (!hook && !colour) return;
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification

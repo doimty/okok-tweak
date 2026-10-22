@@ -274,9 +274,19 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
         extra = @[
             @{@"type": @"slider", @"key": @"cornersRadius", @"title": @"圆角半径",
               @"min": @0, @"max": @24, @"help": @"0 表示不圆角，最大 24。"},
+            @{@"type": @"slider", @"key": @"cornersMargin", @"title": @"卡片边距",
+              @"min": @0, @"max": @24, @"help": @"卡片左右与屏幕边缘的距离，列表范围生效。"},
+            @{@"type": @"slider", @"key": @"cornersSpacing", @"title": @"卡片间距",
+              @"min": @0, @"max": @24, @"help": @"相邻卡片之间的空隙，列表范围生效。"},
             @{@"type": @"choice", @"key": @"cornersScope", @"title": @"作用范围",
               @"items": @[@{@"value": @"list", @"title": @"列表卡片（推荐）"},
-                          @{@"value": @"all", @"title": @"所有带背景色的视图"}]}
+                          @{@"value": @"all", @"title": @"所有带背景色的视图"}]},
+            @{@"key": @"cornersFill", @"title": @"卡片背景色",
+              @"help": @"留空不修改。仅列表范围生效，格式 #RRGGBB。"},
+            @{@"type": @"slider", @"key": @"cornersStrokeWidth", @"title": @"描边宽度",
+              @"min": @0, @"max": @4, @"help": @"0 表示无描边。"},
+            @{@"key": @"cornersStrokeColor", @"title": @"描边颜色",
+              @"help": @"留空不描边。格式 #RRGGBB。"}
         ];
     }
     return [[WCKFeatureDetailViewController alloc] initWithSettings:self.settings
