@@ -16,7 +16,7 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
     dispatch_once(&once, ^{
         defaults = @{
             @"enabled": @NO, @"keyboardSwipe": @NO, @"svgTint": @NO,
-            @"momentsTime": @NO, @"albumSheet": @NO, @"readAll": @NO,
+            @"momentsTime": @NO, @"albumSheet": @NO, @"readAll": @NO, @"corners": @NO,
             @"svgTintLight": @"#07C160", @"svgTintDark": @"#07C160",
             @"svgInclude": @"", @"svgExclude": @"",
             @"svgUseFixedColor": @YES, @"svgPaletteHexes": WCKDefaultSVGPalette(),

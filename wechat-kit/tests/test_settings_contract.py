@@ -29,8 +29,8 @@ class SettingsContract(unittest.TestCase):
                                "albumSheet", "readAll", "svgTintLight", "svgTintDark",
                                "svgInclude", "svgExclude", "momentsFormat",
                                "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
-                               "cornersRadius", "cornersScope"})
-        self.assertEqual(defaults.count("@NO"), 6)
+                               "cornersRadius", "cornersScope", "corners"})
+        self.assertEqual(defaults.count("@NO"), 7)
         # Palette defaults to a usable non-empty set and fixed mode stays the default.
         self.assertIn('@"svgUseFixedColor": @YES', defaults)
         self.assertIn('@"svgPaletteHexes": WCKDefaultSVGPalette()', defaults)
@@ -40,6 +40,16 @@ class SettingsContract(unittest.TestCase):
         self.assertEqual(defaults.count('@"#07C160"'), 2)
         self.assertIn('@"svgInclude": @""', defaults)
         self.assertIn('@"momentsFormat": @"yyyy-MM-dd HH:mm:ss"', defaults)
+
+    def test_every_declared_switch_has_a_default(self):
+        # Any key surfaced by the settings UI must exist in the defaults table,
+        # otherwise the write is rejected at runtime with "unsupported setting".
+        page = (ROOT / "src/WCKSettingsViewController.m").read_text()
+        declared = set(re.findall(r'@"key":\s*@"([A-Za-z]+)"', page))
+        defaults = self.m.split("defaults = @{", 1)[1].split("};", 1)[0]
+        known = set(re.findall(r'@"([^"]+)"\s*:', defaults))
+        missing = sorted(declared - known)
+        self.assertEqual(missing, [], "switch keys missing from defaults: %s" % missing)
 
     def test_bounded_loading_and_types(self):
         self.assertIn("readDataUpToLength:WCKMaximumFileBytes + 1", self.m)
