@@ -11,7 +11,7 @@ variants={
  'mutant-light-used-in-dark':(selection.replace('dark ? @"svgTintDark" : @"svgTintLight"','dark ? @"svgTintLight" : @"svgTintLight"'),policy),
  'mutant-old-empty-list':(selection,policy.replace('(!restricted || WCKNameInCSV(name, include))','((void)restricted, WCKNameInCSV(name, include))')),
  'mutant-palette-fixed-slot':(selection.replace('NSUInteger slot = WCKPaletteIndexForName(name, palette.count);','NSUInteger slot = 0; (void)name;'),policy),
- 'mutant-alpha-ignored':(selection.replace('alpha = WCKSVGRandomAlpha(settings);','alpha = 1.0; (void)settings;'),policy),
+ 'mutant-alpha-ignored':(selection.replace('alpha = WCKSVGRandomAlpha(settings);','alpha = (WCKSVGRandomAlpha(settings), 1.0);'),policy),
  'mutant-palette-no-default':(selection.replace('return palette.count ? palette : WCKDefaultSVGPalette();','return palette;'),policy),
  'mutant-fixed-flag-ignored':(selection.replace('BOOL fixed = ![fixedFlag isKindOfClass:NSNumber.class] || [fixedFlag boolValue];','BOOL fixed = YES; (void)fixedFlag;'),policy)}
 results=[]
