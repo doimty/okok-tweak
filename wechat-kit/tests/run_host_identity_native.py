@@ -8,7 +8,7 @@ if sys.platform!='darwin':
 cases=['normal','display_default','display_wrong','wrong_build','wrong_version','wrong_identifier',
  'runtime_identifier_mismatch','wrong_executable_name','wrong_executable_path','non_file_url',
  'missing_then_ready','corrupt_then_ready','scalar_plist','numeric_version','missing_field','missing_versions','missing_identifier','missing_executable','extension_identifier','oversized','concurrent']
-names=['WCKHostIdentity.m','WCKRuntime.m','WCKEntryRegistry.m','WCKSettings.m','WCKPolicy.c']
+names=['WCKHostIdentity.m','WCKRuntime.m','WCKEntryRegistry.m','WCKSettings.m','WCKSVGPalette.m','WCKPolicy.c']
 source={n:(root/'src'/n).read_text() for n in names}
 variants={
  'baseline':{},

@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='wck-behavior-') as td:
    if n in changes:assert text!=body,'unchanged mutation'
    (d/n).write_text(text)
   exe=d/'behavior'
-  cmd=['clang','-fobjc-arc','-fblocks','-framework','Foundation','-framework','CoreGraphics','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I'+str(r/'tests/fake-behavior'),'-I'+str(d),'-I'+str(r/'src'),str(r/'tests/WCKBehaviorModel.m'),str(r/'src/WCKPolicy.c'),str(r/'src/WCKSettings.m'),'-o',str(exe)]
+  cmd=['clang','-fobjc-arc','-fblocks','-framework','Foundation','-framework','CoreGraphics','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I'+str(r/'tests/fake-behavior'),'-I'+str(d),'-I'+str(r/'src'),str(r/'tests/WCKBehaviorModel.m'),str(r/'src/WCKPolicy.c'),str(r/'src/WCKSettings.m'),str(r/'src/WCKSVGPalette.m'),'-o',str(exe)]
   c=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
   assert c.returncode==0,(name,'COMPILE FAILED',c.stderr)
   runs=[]
