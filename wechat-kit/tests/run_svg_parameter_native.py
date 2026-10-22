@@ -26,7 +26,7 @@ mutation('theme-angle','payload, size, color, opacity, angle, ignore);','payload
 mutation('no-settings-refresh','for (UIView *view in sSVGViews.allObjects) WCKRefreshSVGView(view);','for (UIView *view in sSVGViews.allObjects) (void)view;','refresh')
 mutation('wrong-carrier-traits','[view traitCollection]','UITraitCollection.currentTraitCollection','refresh',True)
 mutation('no-transform-provenance','if (input && !input.ambiguous) {','if (NO && input && !input.ambiguous) {','refresh')
-mutation('bypass-image-subclass','result = WCKSVGReplayStep((UIImage *)result, step);','result = WCKSVGApply(result, step.operation, step.insets, step.mode);','subclasses')
+mutation('bypass-image-subclass','case WCKSVGAlignOp: return [image imageWithAlignmentRectInsets:step.insets];','case WCKSVGAlignOp: return sOriginalAlign ? sOriginalAlign(image, @selector(imageWithAlignmentRectInsets:), step.insets) : nil;','subclasses')
 mutation('bypass-view-subclass','else [(UIImageView *)view setImage:next];','else sOriginalImage(view, @selector(setImage:), next);','subclasses')
 mutation('no-self-dedup','if (result == image && last && last.operation == operation && last.mode == mode &&','if (NO && result == image && last && last.operation == operation && last.mode == mode &&','self-intent')
 mutation('skip-first-self-transform','WCKSVGStep *last = input.steps.lastObject;','if (result == image) return result; WCKSVGStep *last = input.steps.lastObject;','self-intent')
