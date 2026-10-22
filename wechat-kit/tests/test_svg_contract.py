@@ -93,7 +93,7 @@ class SVGParameterContract(unittest.TestCase):
   self.assertIn('if (!current || current != slot.last) WCKSVGPutSlot',refresh)
   self.assertNotIn('WCKSVGStillOwned',source)
  def test_selection_remains_global_and_reversible(self):
-  self.assertIn('WCKEnabled(@"svgTint")',source);self.assertIn('WCKSVGSelectRGB(WCKSettings.shared.snapshot, request.name,',source)
+  self.assertIn('WCKEnabled(@"svgTint")',source);self.assertIn('WCKSVGSelectPacked(WCKSettings.shared.snapshot, request.name,',source)
   self.assertIn('traits.userInterfaceStyle == UIUserInterfaceStyleDark',source)
   self.assertIn('id color = tinted ? WCKSVGColor(rgb) : r.color;',source)
 if __name__=='__main__':unittest.main(argv=[__file__]+rest,verbosity=2)

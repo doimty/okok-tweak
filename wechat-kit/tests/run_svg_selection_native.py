@@ -9,14 +9,18 @@ variants={
  'baseline':(selection,policy),
  'mutant-master-bypass':(selection.replace('![master boolValue]','NO'),policy),
  'mutant-light-used-in-dark':(selection.replace('dark ? @"svgTintDark" : @"svgTintLight"','dark ? @"svgTintLight" : @"svgTintLight"'),policy),
- 'mutant-old-empty-list':(selection,policy.replace('(!restricted || WCKNameInCSV(name, include))','((void)restricted, WCKNameInCSV(name, include))'))}
+ 'mutant-old-empty-list':(selection,policy.replace('(!restricted || WCKNameInCSV(name, include))','((void)restricted, WCKNameInCSV(name, include))')),
+ 'mutant-palette-fixed-slot':(selection.replace('NSUInteger slot = WCKPaletteIndexForName(name, palette.count);','NSUInteger slot = 0; (void)name;'),policy),
+ 'mutant-alpha-ignored':(selection.replace('alpha = WCKSVGRandomAlpha(settings);','alpha = 1.0; (void)settings;'),policy),
+ 'mutant-palette-no-default':(selection.replace('return palette.count ? palette : WCKDefaultSVGPalette();','return palette;'),policy),
+ 'mutant-fixed-flag-ignored':(selection.replace('BOOL fixed = ![fixedFlag isKindOfClass:NSNumber.class] || [fixedFlag boolValue];','BOOL fixed = YES; (void)fixedFlag;'),policy)}
 results=[]
 with tempfile.TemporaryDirectory(prefix='wck-svg-native-') as td:
  td=Path(td)
  for name,(s,p) in variants.items():
   if name!='baseline':assert (s,p)!=(selection,policy),'mutation did not modify source'
   sp=td/'selection.m';pp=td/'policy.c';sp.write_text(s);pp.write_text(p);exe=td/name
-  c=subprocess.run(['clang','-fobjc-arc','-fblocks','-framework','Foundation','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I'+str(r/'src'),str(sp),str(pp),str(r/'src/WCKSettings.m'),str(r/'tests/WCKSVGSelectionTests.m'),'-o',str(exe)],capture_output=True,text=True,timeout=120)
+  c=subprocess.run(['clang','-fobjc-arc','-fblocks','-framework','Foundation','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I'+str(r/'src'),str(sp),str(pp),str(r/'src/WCKSettings.m'),str(r/'src/WCKSVGPalette.m'),str(r/'tests/WCKSVGSelectionTests.m'),'-o',str(exe)],capture_output=True,text=True,timeout=120)
   assert c.returncode==0,(name,c.stderr)
   t=subprocess.run([str(exe)],capture_output=True,text=True,timeout=25)
   ok=(t.returncode==0) if name=='baseline' else t.returncode!=0

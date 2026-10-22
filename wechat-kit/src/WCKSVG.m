@@ -59,6 +59,7 @@ typedef id (*WCKEngineIMP)(id, SEL, id, CGSize, double, double, double, id);
 @property(nonatomic, strong, readonly) WCKSVGRequest *request;
 @property(nonatomic, copy, readonly) NSArray<WCKSVGStep *> *steps;
 @property(nonatomic, readonly) BOOL tinted, ambiguous;
+// Packed 0xAARRGGBB: one field keeps the colour and its alpha comparable.
 @property(nonatomic, readonly) uint32_t rgb;
 - (instancetype)initWithRequest:(WCKSVGRequest *)request steps:(NSArray<WCKSVGStep *> *)steps
     tinted:(BOOL)tinted rgb:(uint32_t)rgb;
@@ -251,19 +252,21 @@ static id WCKSVGAdapted(id c, SEL s, id name, id data, id config) {
 }
 
 static BOOL WCKSVGChoose(WCKSVGRequest *request, UITraitCollection *traits, BOOL *tinted, uint32_t *rgb) {
-    *tinted = NO; *rgb = 0;
+    *tinted = NO; *rgb = 0;   // rgb carries 0xAARRGGBB from the selector
     @try {
         if (request && traits && WCKEnabled(@"svgTint"))
-            *tinted = WCKSVGSelectRGB(WCKSettings.shared.snapshot, request.name,
+            *tinted = WCKSVGSelectPacked(WCKSettings.shared.snapshot, request.name,
                 traits.userInterfaceStyle == UIUserInterfaceStyleDark, rgb);
         return YES;
     } @catch (__unused NSException *exception) {
         *tinted = NO; *rgb = 0; WCKSVGDiagnostic(@"selection", @"颜色选择异常；保留原调用"); return NO;
     }
 }
-static UIColor *WCKSVGColor(uint32_t rgb) {
+static UIColor *WCKSVGColor(uint32_t packed) {
+    uint32_t rgb = 0; double alpha = 1;
+    WCKSVGUnpack(packed, &rgb, &alpha);
     return [UIColor colorWithRed:((rgb >> 16) & 255) / 255.0 green:((rgb >> 8) & 255) / 255.0
-        blue:(rgb & 255) / 255.0 alpha:1];
+        blue:(rgb & 255) / 255.0 alpha:alpha];
 }
 static id WCKSVGCall(WCKSVGKind kind, IMP original, id receiver, SEL selector, id payload,
     CGSize size, id color, double scale, double rotation, double opacity, int angle, BOOL ignore) {

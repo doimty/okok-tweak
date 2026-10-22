@@ -1,6 +1,8 @@
 #import "WCKSettingsViewController.h"
 #import "WCKSettings.h"
 #import "WCKRuntime.h"
+#import "WCKSVGColorViewController.h"
+#import "WCKSVGPalette.h"
 
 static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     static NSArray *rows;
@@ -30,14 +32,10 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         rows = @[
-            @{@"key": @"svgTintLight", @"module": @"svgTint", @"title": @"浅色图标颜色", @"help": @"请输入 #RRGGBB，例如 #07C160。"},
-            @{@"key": @"svgTintDark", @"module": @"svgTint", @"title": @"深色图标颜色", @"help": @"请输入 #RRGGBB，例如 #07C160。"},
-            @{ @"key": @"svgInclude", @"module": @"svgTint", @"title": @"限定图标名单（可选）", @"help": @"留空为全局 SVG 改色；填写后仅改名单内图标。逗号分隔，最多 2048 字符，排除优先。"},
-            @{@"key": @"svgExclude", @"module": @"svgTint", @"title": @"排除图标名单", @"help": @"逗号分隔，最多 2048 字符。排除名单优先。"},
             @{@"key": @"momentsFormat", @"module": @"momentsTime", @"title": @"时间格式", @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}
         ];
     });
-    return rows[path.section == 2 ? path.row : 4];
+    return rows[0];
 }
 
 @interface WCKSettingsViewController ()
@@ -167,18 +165,18 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? 1 : (section == 1 ? WCKModuleRows().count : (section == 2 ? 4 : 1));
+    return section == 0 ? 1 : (section == 1 ? WCKModuleRows().count : (section == 2 ? 1 : 1));
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @[@"总开关", @"功能状态（13 项）", @"SVG 图标改色", @"朋友圈时间格式"][section];
+    return @[@"总开关", @"功能状态（13 项）", @"Svg 图标改色", @"朋友圈时间格式"][section];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     return @[
         @"默认全部关闭。总开关关闭时所有功能均不生效。不保存账号或聊天内容。",
         @"仅宿主支持且状态已就绪的项目可开启；未完成项保留说明。已存开关仍可关闭。",
-        @"全局改色仅针对微信 SVG，不修改照片或头像。留空即全局，名单仅作可选限制，排除优先。修改后刷新已跟踪图标；未显示过的页面下次打开时应用。",
+        @"进入后可选择固定颜色或随机调色盘，并设置图标名单。仅作用于微信 SVG，不修改照片或头像。",
         @"功能已就绪且宿主支持时可编辑。默认 yyyy-MM-dd HH:mm:ss。"
     ][section];
 }
@@ -214,6 +212,12 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
             [toggle addTarget:self action:@selector(toggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
         }
+    } else if (path.section == 2) {
+        cell.textLabel.text = @"配色与图标名单";
+        cell.detailTextLabel.text = [self svgSummary];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        cell.accessibilityIdentifier = @"wck.svg.entry";
     } else {
         NSDictionary *row = WCKTextRow(path);
         NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
@@ -269,8 +273,26 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (NSString *)svgSummary {
+    id flag = self.settings.snapshot[@"svgUseFixedColor"];
+    BOOL fixed = ![flag isKindOfClass:NSNumber.class] || [flag boolValue];
+    NSString *light = WCKHexDisplay([self.settings stringForKey:@"svgTintLight" defaultValue:@""]);
+    NSString *dark = WCKHexDisplay([self.settings stringForKey:@"svgTintDark" defaultValue:@""]);
+    if (fixed) return [NSString stringWithFormat:@"固定颜色 · 浅 %@ · 深 %@", light, dark];
+    id stored = self.settings.snapshot[@"svgPaletteHexes"];
+    NSUInteger count = [stored isKindOfClass:NSArray.class] ? [(NSArray *)stored count] : 0;
+    return count ? [NSString stringWithFormat:@"随机调色盘 · %lu 色", (unsigned long)count]
+                 : @"随机调色盘 · 默认色板";
+}
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
+    if (path.section == 2) {
+        if (![self canEnableKey:@"svgTint"]) { [self refreshState]; return; }
+        WCKSVGColorViewController *page = [[WCKSVGColorViewController alloc] initWithSettings:self.settings];
+        [self.navigationController pushViewController:page animated:YES];
+        return;
+    }
     if (path.section < 2) return;
     NSDictionary *row = WCKTextRow(path);
     if (![self canEnableKey:row[@"module"]]) {

@@ -37,7 +37,7 @@ class FeatureContracts(unittest.TestCase):
         src=(root/'src/WCKSVG.m').read_text()
         policy=(root/'src/WCKPolicy.c').read_text()
         self.assertIn('!restricted || WCKNameInCSV(name, include)',policy)
-        for s in ['WCKSVGSelectRGB(WCKSettings.shared.snapshot, request.name,',
+        for s in ['WCKSVGSelectPacked(WCKSettings.shared.snapshot, request.name,',
                   'NSMapTable mapTableWithKeyOptions:', 'WCKSVGNameScope',
                   'WCKSVGReplayStep', 'sFactoryDepth++ == 0']:
             self.assertIn(s,src)

@@ -42,7 +42,7 @@ if a.variant:
  variants={a.variant:variants[a.variant]}
 output=a.output or r/'evidence'/('svg-parameter-objects-'+a.arch+'.json' if a.object_only else 'native-svg-model-tests.json')
 output.parent.mkdir(parents=True,exist_ok=True);rows=[]
-units=['src/WCKPolicy.c','src/WCKSettings.m','src/WCKSVGSelection.m','tests/WCKSVGParameterModel.m']
+units=['src/WCKPolicy.c','src/WCKSettings.m','src/WCKSVGSelection.m','src/WCKSVGPalette.m','tests/WCKSVGParameterModel.m']
 with tempfile.TemporaryDirectory(prefix='wck-svg-param-') as tmp:
  td=Path(tmp);common=['clang','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I'+str(r/'tests/fake-svg-parameter'),'-I'+str(r/'src')]
  if a.object_only:common+=['-target',a.arch+'-apple-ios15.0','-isysroot',str(a.sdk),'-Wno-incompatible-sysroot']

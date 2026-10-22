@@ -1,4 +1,6 @@
 #import "WCKSettings.h"
+#import "WCKSVGPalette.h"
+#import <math.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <dispatch/dispatch.h>
 
@@ -17,6 +19,8 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
             @"momentsTime": @NO, @"albumSheet": @NO, @"readAll": @NO,
             @"svgTintLight": @"#07C160", @"svgTintDark": @"#07C160",
             @"svgInclude": @"", @"svgExclude": @"",
+            @"svgUseFixedColor": @YES, @"svgPaletteHexes": WCKDefaultSVGPalette(),
+            @"svgRandomAlpha": @1.0,
             @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
         };
     });
@@ -33,9 +37,29 @@ static NSError *WCKError(NSInteger code, NSString *message, NSError *underlying)
 static id WCKValidatedValue(NSString *key, id value) {
     id defaultValue = WCKDefaults()[key];
     if (!defaultValue) return nil;
+    if ([defaultValue isKindOfClass:NSArray.class]) {
+        // Palette: 1...32 unique "#RRGGBB" entries, order preserved.
+        if (![value isKindOfClass:NSArray.class]) return nil;
+        NSArray *list = (NSArray *)value;
+        if (list.count == 0 || list.count > 32) return nil;
+        NSMutableArray<NSString *> *canonical = [NSMutableArray array];
+        for (id entry in list) {
+            NSString *hex = WCKNormalizeHex([entry isKindOfClass:NSString.class] ? entry : nil);
+            if (!hex || [canonical containsObject:hex]) return nil;
+            [canonical addObject:hex];
+        }
+        return [canonical copy];
+    }
     if ([defaultValue isKindOfClass:NSNumber.class]) {
         if (![value isKindOfClass:NSNumber.class] ||
-            CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) return nil;
+            CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) {
+            // Only the alpha key is numeric; everything else is a switch.
+            if (![key isEqualToString:@"svgRandomAlpha"] || ![value isKindOfClass:NSNumber.class] ||
+                CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) return nil;
+            double alpha = [value doubleValue];
+            if (!isfinite(alpha)) return nil;
+            return @(MIN(1.0, MAX(0.2, alpha)));
+        }
         return @([value boolValue]);
     }
     if (![value isKindOfClass:NSString.class]) return nil;
