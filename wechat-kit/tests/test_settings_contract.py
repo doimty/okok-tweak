@@ -78,7 +78,10 @@ class SettingsContract(unittest.TestCase):
         self.assertIn('isEqualToString:@"ready"', self.vm)
         self.assertIn("toggle.enabled = canEnable || stored;", self.vm)
         self.assertIn("sender.isOn && !canEnable", self.vm)
-        self.assertIn("留空为全局 SVG 改色", self.vm)
+        # The colour details moved to the second-level page; the first page only
+        # promises a fixed colour or a palette and keeps the list warning reachable.
+        self.assertIn("进入后可选择固定颜色或随机调色盘", self.vm)
+        self.assertIn("排除优先", (ROOT/"src/WCKSVGColorViewController.m").read_text())
         self.assertIn("总开关关闭，当前不生效", self.vm)
         self.assertIn("同时开启总开关", self.vm)
         self.assertNotIn("留空表示没有改色", self.vm)
