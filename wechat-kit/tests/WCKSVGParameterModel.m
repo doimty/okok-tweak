@@ -330,6 +330,10 @@ static void setterReentry(void){
  v.image=slotImage;CHECK(v.image.paintedRGB==0xAABBCC);
  UIImage*aba=vm(@"reentry-aba");
  setting(@"svgTintDark",@"#334455");
+ // Put the entry image back without going through the hooked setter, so the
+ // entry pointer equals the value the reentrant callback restores. Only the
+ // lexical superseded marker can then distinguish A->B->A from no reentry.
+ [v replaceOutsideHook:slotImage];
  before=setterAssignments;
  duringFactory=^{v.image=replacement;v.image=slotImage;};
  v.image=aba;
