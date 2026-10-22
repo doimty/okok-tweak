@@ -147,17 +147,31 @@ static WCKSVGStamp *WCKSVGLookup(id image) {
         WCKSVGDiagnostic(@"provenance", @"来源读取异常；保留当前图"); return nil;
     }
 }
-static BOOL WCKSVGSameDouble(double a, double b) { return memcmp(&a, &b, sizeof(a)) == 0; }
+// Value comparison, not bit pattern: -0.0 equals +0.0 and NaN equals NaN.
+static BOOL WCKSVGSameDouble(double a, double b) { return a == b || (a != a && b != b); }
 // Comparisons (including UIColor equality) are deliberately outside the map lock.
 static BOOL WCKSVGSameRequest(WCKSVGRequest *a, WCKSVGRequest *b) {
     if (a == b) return YES;
     id receiver = a.receiver;
     return a && b && receiver && receiver == b.receiver && a.kind == b.kind &&
-        a.selector == b.selector && a.original == b.original && [a.payload isEqual:b.payload] &&
-        [a.name isEqualToString:b.name] && (a.color == b.color || [a.color isEqual:b.color]) &&
+        a.selector == b.selector && a.original == b.original &&
+        (a.payload == b.payload || [a.payload isEqual:b.payload]) &&
+        (a.name == b.name || [a.name isEqualToString:b.name]) &&
+        (a.color == b.color || [a.color isEqual:b.color]) &&
         WCKSVGSameDouble(a.size.width, b.size.width) && WCKSVGSameDouble(a.size.height, b.size.height) &&
         WCKSVGSameDouble(a.scale, b.scale) && WCKSVGSameDouble(a.rotation, b.rotation) &&
         WCKSVGSameDouble(a.opacity, b.opacity) && a.angle == b.angle && a.ignore == b.ignore;
+}
+// A longer recipe whose leading steps equal the shorter one describes the same
+// image plus more work already applied to it, so both may share one object.
+static BOOL WCKSVGStepsPrefix(NSArray<WCKSVGStep *> *shorter, NSArray<WCKSVGStep *> *longer) {
+    if (shorter.count > longer.count) return NO;
+    for (NSUInteger i = 0; i < shorter.count; ++i) {
+        WCKSVGStep *x = shorter[i], *y = longer[i];
+        if (x.operation != y.operation || x.mode != y.mode ||
+            !UIEdgeInsetsEqualToEdgeInsets(x.insets, y.insets)) return NO;
+    }
+    return YES;
 }
 static BOOL WCKSVGSameStamp(WCKSVGStamp *a, WCKSVGStamp *b) {
     if (a == b) return a && !a.ambiguous;
@@ -181,8 +195,15 @@ static WCKSVGStamp *WCKSVGStore(id image, WCKSVGStamp *stamp, WCKSVGStamp *selfI
         for (NSUInteger attempt = 0; attempt < 3; ++attempt) {
             WCKSVGStamp *old = WCKSVGLookup(image);
             BOOL same = old && WCKSVGSameStamp(old, stamp);
-            BOOL conflict = old && (old.ambiguous || (old != selfInput && !same));
-            WCKSVGStamp *next = !old || old == selfInput ? stamp : old;
+            BOOL compatible = old && !old.ambiguous && !stamp.ambiguous &&
+                old.tinted == stamp.tinted && old.rgb == stamp.rgb &&
+                WCKSVGSameRequest(old.request, stamp.request) &&
+                (WCKSVGStepsPrefix(old.steps, stamp.steps) ||
+                 WCKSVGStepsPrefix(stamp.steps, old.steps));
+            BOOL conflict = old && (old.ambiguous || (!same && !compatible));
+            WCKSVGStamp *longest = stamp.steps.count > old.steps.count ? stamp : old;
+            WCKSVGStamp *next = !old || old == selfInput ? stamp :
+                same ? old : compatible ? longest : old;
             BOOL published = NO, quarantined = NO;
             [sProvenanceLock lock];
             @try {
@@ -520,13 +541,18 @@ static void WCKSVGRefreshSlot(id view, WCKSVGDriver *driver, WCKSVGSlotKind kind
     @try {
         UIImage *current = WCKSVGCurrent(view, kind, state);
         WCKSVGStamp *owned = WCKSVGOwnedStamp(current, slot);
-        if (!owned) { WCKSVGPutSlot(driver, kind, state, nil); return; }
+        // A transient conflict must not destroy the slot: OwnedStamp re-evaluates
+        // on every refresh, so keeping it lets a later state recover.
+        if (!owned) { if (!current || current != slot.last) WCKSVGPutSlot(driver, kind, state, nil); return; }
         WCKSVGStamp *applied = nil;
         UIImage *next = WCKSVGRender(owned, current, [view traitCollection], &applied);
         if (next == current) return;
         // Replay can execute arbitrary saved IMPs. Recheck after those callbacks,
         // rather than overwriting a replacement made while they were running.
-        if (WCKSVGCurrent(view, kind, state) != current || !WCKSVGOwnedStamp(current, slot)) {
+        // Discarding the fresh lookup would let a recipe appended during replay be
+        // overwritten by the stale one, silently dropping that transform for good.
+        WCKSVGStamp *latest = WCKSVGOwnedStamp(current, slot);
+        if (WCKSVGCurrent(view, kind, state) != current || latest != owned) {
             WCKSVGPutSlot(driver, kind, state, nil); return;
         }
         // Refresh is a new assignment: preserve the real view's override chain.

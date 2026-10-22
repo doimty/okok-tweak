@@ -59,7 +59,10 @@ class SVGParameterContract(unittest.TestCase):
   self.assertIn('attempt = 0; attempt < 3; ++attempt',store)
   self.assertNotIn('for (;;)',store)
   self.assertIn('removeObjectForKey:image',store)
-  self.assertIn('old != selfInput && !same',store)
+  self.assertIn('old.ambiguous || (!same && !compatible)',store)
+  self.assertIn('WCKSVGStepsPrefix',body('WCKSVGStore'))
+  self.assertIn('stamp.steps.count > old.steps.count ? stamp : old',store)
+  self.assertIn('a == b || (a != a && b != b)',source)
   self.assertIn('sConflictedImages = [NSHashTable hashTableWithOptions:',source)
   self.assertIn('[sConflictedImages containsObject:image]',body('WCKSVGLookup'))
   self.assertIn('[sConflictedImages containsObject:image]',store)
@@ -83,6 +86,11 @@ class SVGParameterContract(unittest.TestCase):
   refresh=body('WCKSVGRefreshSlot')
   self.assertIn('WCKSVGOwnedStamp(current, slot)',refresh)
   self.assertIn('WCKSVGRender(owned, current',refresh)
+  # A recipe appended during replay must abort the assignment instead of being
+  # overwritten by the stale one, and a transient conflict must keep the slot.
+  self.assertIn('WCKSVGStamp *latest = WCKSVGOwnedStamp(current, slot);',refresh)
+  self.assertIn('latest != owned',refresh)
+  self.assertIn('if (!current || current != slot.last) WCKSVGPutSlot',refresh)
   self.assertNotIn('WCKSVGStillOwned',source)
  def test_selection_remains_global_and_reversible(self):
   self.assertIn('WCKEnabled(@"svgTint")',source);self.assertIn('WCKSVGSelectRGB(WCKSettings.shared.snapshot, request.name,',source)
