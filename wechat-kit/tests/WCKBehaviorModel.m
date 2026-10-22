@@ -181,7 +181,8 @@ int main(int argc,const char **argv){@autoreleasepool{
  set(@"enabled",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);CHECK(keyboardDelay==30*NSEC_PER_MSEC);CHECK(responderCalls==0);
  drainKeyboard();CHECK(responderCalls==1&&text.isFirstResponder);CHECK(toolResponderCalls==0);text.firstResponder=NO;
  // Boundary cases: stop>=contentHeight-10, strictly > +0.15, 30ms delay.
- scroll.contentOffset=(CGPoint){0,489.99};drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);
+ // The stop position decides, not the offset at the moment of release.
+ scroll.contentOffset=(CGPoint){0,490};dragTo(vc,scroll,0.6,470);CHECK(keyboardBlocks.count==0);
  scroll.contentOffset=(CGPoint){0,490};drag(vc,scroll,0.15);CHECK(keyboardBlocks.count==0);
  drag(vc,scroll,-0.6);CHECK(keyboardBlocks.count==0);drag(vc,scroll,NAN);CHECK(keyboardBlocks.count==0);
  drag(vc,scroll,0.15001);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==2);text.firstResponder=NO;
