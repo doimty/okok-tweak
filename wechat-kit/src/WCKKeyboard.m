@@ -6,8 +6,11 @@
 
 // Reference UUID 525BA5E4... installs BaseMsgContentViewController's
 // scrollViewWillEndDragging:withVelocity:targetContentOffset: at 0x2e29c4.
-// The original calls the host first, then tests bottom<=10pt and velocity.y>0.5,
-// and after 100ms asks toolView.textView to becomeFirstResponder.
+// The reference calls the host first, then tests bottom<=10pt and velocity.y>0.5,
+// and after 100ms asks toolView.textView to becomeFirstResponder. Two changes are
+// deliberate: judge the offset the list will stop at (a short flick that coasts
+// to the bottom must count) and use a lower speed bar and shorter delay, because
+// the reference values made the gesture feel late and sometimes miss entirely.
 static void (*sOriginalKeyboardDrag)(id, SEL, UIScrollView *, CGPoint, CGPoint *);
 static char sKeyboardStateKey;
 static NSUInteger sKeyboardEpoch;
@@ -53,9 +56,12 @@ static void WCKKeyboardWillEndDragging(UIViewController *vc, SEL cmd,
         if (!WCKKeyboardVisible(vc, scroll)) return;
         CGFloat offset = scroll.contentOffset.y, height = scroll.bounds.size.height;
         CGFloat content = scroll.contentSize.height;
+        // This callback fires while the list is still coasting, so the current
+        // offset can be far from the bottom even though the gesture ends there.
+        CGFloat stop = target ? target->y : offset;
         if (!isfinite(offset) || !isfinite(height) || !isfinite(content) ||
-            !isfinite(velocity.y) || height <= 0 || content < 0 ||
-            !(offset + height >= content - 10.0) || !(velocity.y > 0.5)) return;
+            !isfinite(stop) || !isfinite(velocity.y) || height <= 0 || content < 0 ||
+            !(stop + height >= content - 10.0) || !(velocity.y > 0.15)) return;
         id tool = WCKKeyboardTool(vc);
         UIResponder *text = WCKKeyboardText(tool);
         if (!text || text.isFirstResponder) return;
@@ -68,7 +74,7 @@ static void WCKKeyboardWillEndDragging(UIViewController *vc, SEL cmd,
         __weak UIScrollView *weakScroll = scroll;
         __weak id weakTool = tool;
         __weak UIResponder *weakText = text;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC),
             dispatch_get_main_queue(), ^{
                 @try {
                     UIViewController *current = weakVC; UIScrollView *list = weakScroll;

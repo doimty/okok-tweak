@@ -22,8 +22,9 @@ class FeatureContracts(unittest.TestCase):
         src=(root/'src/WCKKeyboard.m').read_text()
         for s in ['NSClassFromString(@"BaseMsgContentViewController")',
                   'scrollViewWillEndDragging:withVelocity:targetContentOffset:',
-                  '@encode(CGPoint)', '@encode(CGPoint *)', 'content - 10.0', 'velocity.y > 0.5',
-                  '100 * NSEC_PER_MSEC', 'NSSelectorFromString(@"textView")',
+                  '@encode(CGPoint)', '@encode(CGPoint *)', 'content - 10.0', 'velocity.y > 0.15',
+                  '30 * NSEC_PER_MSEC', 'CGFloat stop = target ? target->y : offset;',
+                  'NSSelectorFromString(@"textView")',
                   '[currentText becomeFirstResponder]', 'epoch != sKeyboardEpoch',
                   'currentText != weakText']:
             self.assertIn(s,src)

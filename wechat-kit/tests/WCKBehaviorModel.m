@@ -138,12 +138,16 @@ static NSURL *albumBundleURL;
 #undef NSBundle
 static void set(NSString*k,id v){NSError*e;CHECK([modelStore setObject:v forKey:k error:&e]);CHECK(!e);}
 static void drainKeyboard(void){NSArray*blocks=keyboardBlocks.copy;[keyboardBlocks removeAllObjects];for(dispatch_block_t b in blocks)b();}
-static void drag(BaseMsgContentViewController*vc,UIScrollView*scroll,CGFloat velocity){
- unsigned before=dragCalls;CGPoint point={-77,12};lastTarget=NULL;
+static void dragTo(BaseMsgContentViewController*vc,UIScrollView*scroll,CGFloat velocity,CGFloat targetY){
+ unsigned before=dragCalls;CGPoint point={-77,targetY};lastTarget=NULL;
  [vc scrollViewWillEndDragging:scroll withVelocity:(CGPoint){0.25,velocity} targetContentOffset:&point];
  CHECK(dragCalls==before+1);CHECK(lastList==scroll&&lastTarget==&point);
  CHECK(lastVelocity.x==0.25&&(isnan(velocity)?isnan(lastVelocity.y):lastVelocity.y==velocity));
- CHECK(point.x==-70&&point.y==21);
+ CHECK(point.x==-70&&point.y==targetY+9);
+}
+// Default gesture: released above the bottom, coasts to the very end (500).
+static void drag(BaseMsgContentViewController*vc,UIScrollView*scroll,CGFloat velocity){
+ dragTo(vc,scroll,velocity,491);
 }
 int main(int argc,const char **argv){@autoreleasepool{
  CHECK(argc==2);NSString*mode=[NSString stringWithUTF8String:argv[1]];
@@ -174,30 +178,35 @@ int main(int argc,const char **argv){@autoreleasepool{
  UIScrollView*scroll=[UIScrollView new];scroll.window=vc.view.window;scroll.superview=vc.view;
  scroll.bounds=CGRectMake(0,0,320,500);scroll.contentSize=(CGSize){320,1000};scroll.contentOffset=(CGPoint){0,490};
  drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);set(@"keyboardSwipe",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);
- set(@"enabled",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);CHECK(keyboardDelay==100*NSEC_PER_MSEC);CHECK(responderCalls==0);
+ set(@"enabled",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);CHECK(keyboardDelay==30*NSEC_PER_MSEC);CHECK(responderCalls==0);
  drainKeyboard();CHECK(responderCalls==1&&text.isFirstResponder);CHECK(toolResponderCalls==0);text.firstResponder=NO;
- // Original binary boundary cases: >= contentHeight-10, strictly > +0.5.
+ // Boundary cases: stop>=contentHeight-10, strictly > +0.15, 30ms delay.
  scroll.contentOffset=(CGPoint){0,489.99};drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);
- scroll.contentOffset=(CGPoint){0,490};drag(vc,scroll,0.5);CHECK(keyboardBlocks.count==0);
+ scroll.contentOffset=(CGPoint){0,490};drag(vc,scroll,0.15);CHECK(keyboardBlocks.count==0);
  drag(vc,scroll,-0.6);CHECK(keyboardBlocks.count==0);drag(vc,scroll,NAN);CHECK(keyboardBlocks.count==0);
- drag(vc,scroll,0.50001);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==2);text.firstResponder=NO;
+ drag(vc,scroll,0.15001);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==2);text.firstResponder=NO;
+ // A flick released well above the bottom that will still coast there must fire;
+ // one that stops short must not, whatever its speed.
+ scroll.contentOffset=(CGPoint){0,300};dragTo(vc,scroll,0.9,491);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==3);text.firstResponder=NO;
+ scroll.contentOffset=(CGPoint){0,300};dragTo(vc,scroll,0.9,380);CHECK(keyboardBlocks.count==0);
+ scroll.contentOffset=(CGPoint){0,490};
  // The original KVC fallback is used only when toolView returned nil.
- vc.fakeTool=nil;vc.inputToolView=tool;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==3);text.firstResponder=NO;vc.fakeTool=tool;vc.inputToolView=nil;
+ vc.fakeTool=nil;vc.inputToolView=tool;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==4);text.firstResponder=NO;vc.fakeTool=tool;vc.inputToolView=nil;
  text.firstResponder=YES;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);text.firstResponder=NO;
  tool.text=[NSObject new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);tool.text=text;
  scroll.superview=nil;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);scroll.superview=vc.view;
  vc.presentedViewController=[UIViewController new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);vc.presentedViewController=nil;
  UINavigationController*nav=[UINavigationController new];vc.navigationController=nav;nav.topViewController=[UIViewController new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);nav.topViewController=vc;
  // Cancel delayed work on page leave, preference epoch, responder/target replacement.
- drag(vc,scroll,0.6);vc.view.window=nil;drainKeyboard();CHECK(responderCalls==3);vc.view.window=scroll.window;
- drag(vc,scroll,0.6);set(@"keyboardSwipe",@NO);set(@"keyboardSwipe",@YES);drainKeyboard();CHECK(responderCalls==3);
- drag(vc,scroll,0.6);vc.fakeTool=[MMInputToolView new];drainKeyboard();CHECK(responderCalls==3);vc.fakeTool=tool;
- drag(vc,scroll,0.6);tool.text=[KeyboardText new];drainKeyboard();CHECK(responderCalls==3);tool.text=text;
- drag(vc,scroll,0.6);text.firstResponder=YES;drainKeyboard();CHECK(responderCalls==3);text.firstResponder=NO;
- drag(vc,scroll,0.6);UIApplication.sharedApplication.applicationState=UIApplicationStateBackground;drainKeyboard();CHECK(responderCalls==3);UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
- drag(vc,scroll,0.6);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==2);drainKeyboard();CHECK(responderCalls==4);text.firstResponder=NO;
- drag(vc,scroll,0.6);drag(vc,scroll,0.1);drainKeyboard();CHECK(responderCalls==4);
- denyResponder=YES;drag(vc,scroll,0.6);drainKeyboard();CHECK(responderCalls==5);CHECK([statuses[@"keyboardSwipe.debug.last"]isEqual:@"聊天文本框拒绝响应"]);denyResponder=NO;
+ drag(vc,scroll,0.6);vc.view.window=nil;drainKeyboard();CHECK(responderCalls==4);vc.view.window=scroll.window;
+ drag(vc,scroll,0.6);set(@"keyboardSwipe",@NO);set(@"keyboardSwipe",@YES);drainKeyboard();CHECK(responderCalls==4);
+ drag(vc,scroll,0.6);vc.fakeTool=[MMInputToolView new];drainKeyboard();CHECK(responderCalls==4);vc.fakeTool=tool;
+ drag(vc,scroll,0.6);tool.text=[KeyboardText new];drainKeyboard();CHECK(responderCalls==4);tool.text=text;
+ drag(vc,scroll,0.6);text.firstResponder=YES;drainKeyboard();CHECK(responderCalls==4);text.firstResponder=NO;
+ drag(vc,scroll,0.6);UIApplication.sharedApplication.applicationState=UIApplicationStateBackground;drainKeyboard();CHECK(responderCalls==4);UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
+ drag(vc,scroll,0.6);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==2);drainKeyboard();CHECK(responderCalls==5);text.firstResponder=NO;
+ drag(vc,scroll,0.6);drag(vc,scroll,0.1);drainKeyboard();CHECK(responderCalls==5);
+ denyResponder=YES;drag(vc,scroll,0.6);drainKeyboard();CHECK(responderCalls==6);CHECK([statuses[@"keyboardSwipe.debug.last"]isEqual:@"聊天文本框拒绝响应"]);denyResponder=NO;
  CHECK(toolResponderCalls==0);CHECK(tool.gestures.count==0&&vc.view.gestures.count==0);
  // Precise album experiment only. Unrelated/nil values preserve original BOOL.
  ExptService*expt=[ExptService new];NSString*key=@"clicfg_chat_album_pagesheet_mode";
