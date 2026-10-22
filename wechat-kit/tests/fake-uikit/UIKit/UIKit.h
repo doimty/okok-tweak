@@ -1,7 +1,10 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 typedef struct { double top,left,bottom,right; } UIEdgeInsets;
-typedef NS_ENUM(NSInteger, UIImageOrientation) { UIImageOrientationUp=0 };
+static inline BOOL UIEdgeInsetsEqualToEdgeInsets(UIEdgeInsets a, UIEdgeInsets b) {
+    return a.top==b.top && a.left==b.left && a.bottom==b.bottom && a.right==b.right;
+}
+typedef NS_ENUM(NSInteger, UIImageOrientation) { UIImageOrientationUp=0, UIImageOrientationRight=3, UIImageOrientationLeftMirrored=6 };
 typedef NS_ENUM(NSInteger, UIImageRenderingMode) { UIImageRenderingModeAutomatic, UIImageRenderingModeAlwaysOriginal, UIImageRenderingModeAlwaysTemplate };
 typedef NS_ENUM(NSInteger, UIImageResizingMode) { UIImageResizingModeTile, UIImageResizingModeStretch };
 typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) { UIUserInterfaceStyleUnspecified, UIUserInterfaceStyleLight, UIUserInterfaceStyleDark };
@@ -16,6 +19,7 @@ typedef NSUInteger UIControlState;
 @end
 @interface UIImage : NSObject
 @property CGImageRef CGImage;
+@property CGSize size;
 @property double scale;
 @property UIImageOrientation imageOrientation;
 @property UIImageRenderingMode renderingMode;

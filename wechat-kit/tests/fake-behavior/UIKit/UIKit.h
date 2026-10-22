@@ -6,6 +6,7 @@
 @protocol UIGestureRecognizerDelegate <NSObject> @end
 @interface UIResponder : NSObject
 @property(nonatomic,weak) UIResponder *nextResponder;
+@property(nonatomic,getter=isFirstResponder) BOOL firstResponder;
 - (BOOL)becomeFirstResponder;
 @end
 @interface UIView : UIResponder
@@ -19,12 +20,15 @@
 - (void)removeGestureRecognizer:(UIGestureRecognizer *)gesture;
 - (void)didMoveToWindow;
 - (void)layoutSubviews;
+- (BOOL)isDescendantOfView:(UIView *)view;
 @end
 @interface UIControl : UIView @end
 @interface UILabel : UIView
 @property(nonatomic,copy) NSString *text;
 @end
 @interface UIViewController : UIResponder
+@property(nonatomic,strong) UIView *view;
+@property(nonatomic,getter=isViewLoaded) BOOL viewLoaded;
 @property(nonatomic,strong) UIViewController *presentedViewController;
 @property(nonatomic,weak) UINavigationController *navigationController;
 @end
@@ -52,6 +56,8 @@ typedef NS_OPTIONS(NSUInteger,UISwipeGestureRecognizerDirection) { UISwipeGestur
 @interface UIPanGestureRecognizer : UIGestureRecognizer @end
 @interface UILongPressGestureRecognizer : UIGestureRecognizer @end
 @interface UIScrollView : UIView
+@property(nonatomic) CGPoint contentOffset;
+@property(nonatomic) CGSize contentSize;
 @property(nonatomic,strong) UIPanGestureRecognizer *panGestureRecognizer;
 @end
 typedef NS_ENUM(NSInteger,UIApplicationState) { UIApplicationStateActive,UIApplicationStateInactive,UIApplicationStateBackground };

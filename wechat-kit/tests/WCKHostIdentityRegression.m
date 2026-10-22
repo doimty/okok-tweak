@@ -71,8 +71,8 @@ int main(int argc,const char *argv[]) { @autoreleasepool {
         NSMutableDictionary *display=validIdentity();display[@"CFBundleShortVersionString"]=@"Default";fixture.displayInfo=display;
     } else if ([test isEqual:@"display_wrong"]) {
         NSMutableDictionary *display=validIdentity();display[@"CFBundleShortVersionString"]=@"9.9.9";display[@"CFBundleVersion"]=@"bad";fixture.displayInfo=display;
-    } else if ([test isEqual:@"wrong_build"]) {disk[@"CFBundleVersion"]=@"8.0.70.1";expected=NO;
-    } else if ([test isEqual:@"wrong_version"]) {disk[@"CFBundleShortVersionString"]=@"8.0.70";expected=NO;
+    } else if ([test isEqual:@"wrong_build"]) {disk[@"CFBundleVersion"]=@"8.0.70.1";
+    } else if ([test isEqual:@"wrong_version"]) {disk[@"CFBundleShortVersionString"]=@"8.0.70";
     } else if ([test isEqual:@"wrong_identifier"]) {disk[@"CFBundleIdentifier"]=@"com.example.Other";expected=NO;
     } else if ([test isEqual:@"runtime_identifier_mismatch"]) {fixture.bundleIdentifier=@"com.example.Other";expected=NO;
     } else if ([test isEqual:@"wrong_executable_name"]) {disk[@"CFBundleExecutable"]=@"Other";expected=NO;
@@ -80,8 +80,12 @@ int main(int argc,const char *argv[]) { @autoreleasepool {
     } else if ([test isEqual:@"non_file_url"]) {expected=NO;
     } else if ([test isEqual:@"missing_then_ready"] || [test isEqual:@"corrupt_then_ready"]) {retry=YES;expected=NO;
     } else if ([test isEqual:@"scalar_plist"]) {expected=NO;
-    } else if ([test isEqual:@"numeric_version"]) {disk[@"CFBundleShortVersionString"]=@8069;expected=NO;
-    } else if ([test isEqual:@"missing_field"]) {[disk removeObjectForKey:@"CFBundleVersion"];expected=NO;
+    } else if ([test isEqual:@"numeric_version"]) {disk[@"CFBundleShortVersionString"]=@8069;
+    } else if ([test isEqual:@"missing_field"]) {[disk removeObjectForKey:@"CFBundleVersion"];
+    } else if ([test isEqual:@"missing_versions"]) {[disk removeObjectsForKeys:@[@"CFBundleVersion",@"CFBundleShortVersionString"]];
+    } else if ([test isEqual:@"missing_identifier"]) {[disk removeObjectForKey:@"CFBundleIdentifier"];expected=NO;
+    } else if ([test isEqual:@"missing_executable"]) {[disk removeObjectForKey:@"CFBundleExecutable"];expected=NO;
+    } else if ([test isEqual:@"extension_identifier"]) {disk[@"CFBundleIdentifier"]=@"com.tencent.xin.WeChatNotificationServiceExtension";fixture.bundleIdentifier=disk[@"CFBundleIdentifier"];expected=NO;
     } else if ([test isEqual:@"oversized"]) {disk[@"Padding"]=[@"x" stringByPaddingToLength:1048577 withString:@"x" startingAtIndex:0];expected=NO;
     } else CHECK([test isEqual:@"normal"]);
     writeIdentity(disk);NSURL *plist=[base URLByAppendingPathComponent:@"Info.plist"];

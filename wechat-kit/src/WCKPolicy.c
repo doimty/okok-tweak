@@ -3,9 +3,9 @@
 #include <string.h>
 
 bool WCKHostMatches(const char *bundle, const char *version, const char *build) {
-    return bundle && version && build &&
-        strcmp(bundle, "com.tencent.xin") == 0 &&
-        strcmp(version, "8.0.69") == 0 && strcmp(build, "8.0.69.33") == 0;
+    // Version/build metadata is descriptive only. Each module gates its own ABI.
+    (void)version; (void)build;
+    return bundle && strcmp(bundle, "com.tencent.xin") == 0;
 }
 
 bool WCKTypeMatches(const char *actual, const char *expected) {

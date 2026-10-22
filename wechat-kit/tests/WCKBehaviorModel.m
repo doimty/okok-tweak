@@ -35,7 +35,7 @@ BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*old,const char*r,const char*const*
  if(!class_addMethod(c,s,imp,method_getTypeEncoding(m)))method_setImplementation(m,imp);return YES;
 }
 @implementation UIResponder
-- (BOOL)becomeFirstResponder{return !denyResponder;}
+- (BOOL)becomeFirstResponder{self.firstResponder=!denyResponder;return self.firstResponder;}
 @end
 @implementation UIView
 - (instancetype)init{if((self=[super init])){_alpha=1;_bounds=CGRectMake(0,0,50,50);_gestures=[NSMutableArray new];}return self;}
@@ -43,6 +43,7 @@ BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*old,const char*r,const char*const*
 - (void)removeGestureRecognizer:(UIGestureRecognizer*)g{[self.gestures removeObject:g];if(g.view==self)g.view=nil;}
 - (void)didMoveToWindow{}
 - (void)layoutSubviews{}
+- (BOOL)isDescendantOfView:(UIView*)root{for(UIView*v=self;v;v=v.superview)if(v==root)return YES;return NO;}
 @end
 @implementation UIControl @end
 @implementation UILabel @end
@@ -62,18 +63,33 @@ BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*old,const char*r,const char*const*
 @implementation UIApplication
 + (instancetype)sharedApplication{static UIApplication*a;static dispatch_once_t once;dispatch_once(&once,^{a=[self new];});return a;}
 @end
-@interface BaseMsgContentViewController : UIViewController @end
-@implementation BaseMsgContentViewController @end
+static unsigned dragCalls,toolResponderCalls;
+static CGPoint lastVelocity;
+static __weak UIScrollView *lastList;
+static CGPoint *lastTarget;
+@interface BaseMsgContentViewController : UIViewController
+@property(nonatomic,strong) id fakeTool;
+@property(nonatomic,strong) id inputToolView;
+- (id)toolView;
+- (void)scrollViewWillEndDragging:(UIScrollView*)scroll withVelocity:(CGPoint)v targetContentOffset:(inout CGPoint*)target;
+@end
+@implementation BaseMsgContentViewController
+- (id)toolView{return self.fakeTool;}
+- (void)scrollViewWillEndDragging:(UIScrollView*)scroll withVelocity:(CGPoint)v targetContentOffset:(inout CGPoint*)target{
+ ++dragCalls;lastVelocity=v;lastList=scroll;lastTarget=target;if(target){target->x+=7;target->y+=9;}
+}
+@end
+@interface KeyboardText : UIView @end
+@implementation KeyboardText
+- (BOOL)becomeFirstResponder{++responderCalls;return [super becomeFirstResponder];}
+@end
 @interface MMInputToolView : UIView
-@property(nonatomic,strong) UIViewController *controller;
-@property(nonatomic,strong) UIView *text;
-- (id)getViewController;
-- (id)getGrowTextView;
+@property(nonatomic,strong) id text;
+- (id)textView;
 @end
 @implementation MMInputToolView
-- (id)getViewController{return self.controller;}
-- (id)getGrowTextView{return self.text;}
-- (BOOL)becomeFirstResponder{responderCalls++;return [super becomeFirstResponder];}
+- (id)textView{return self.text;}
+- (BOOL)becomeFirstResponder{++toolResponderCalls;return [super becomeFirstResponder];}
 @end
 @interface WCDataItem : NSObject
 @property(nonatomic) unsigned int createtime;
@@ -96,44 +112,93 @@ BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*old,const char*r,const char*const*
 @implementation ExptService
 - (BOOL)getExpt:(id)key withBoolDef:(BOOL)value{experimentCalls++;return value;}
 @end
+// Capture scheduling only; the production callback body is still executed.
+static NSMutableArray *keyboardBlocks;
+static int64_t keyboardDelay;
+static dispatch_time_t modelDeadline(dispatch_time_t when,int64_t delta){CHECK(when==DISPATCH_TIME_NOW);keyboardDelay=delta;return 777;}
+static void modelAfter(dispatch_time_t when,dispatch_queue_t queue,dispatch_block_t block){CHECK(when==777);CHECK(queue==dispatch_get_main_queue());[keyboardBlocks addObject:[block copy]];}
+#define dispatch_time modelDeadline
+#define dispatch_after modelAfter
 #include "WCKKeyboard.m"
+#undef dispatch_time
+#undef dispatch_after
 #include "WCKMomentsTime.m"
+// Same on-disk reader against an isolated bundle; never touch the real host plist.
+static NSURL *albumBundleURL;
+@interface WCKBehaviorBundle : NSBundle
++ (instancetype)mainBundle;
+@end
+@implementation WCKBehaviorBundle
++ (instancetype)mainBundle{static WCKBehaviorBundle*b;static dispatch_once_t once;dispatch_once(&once,^{b=[self new];});return b;}
+- (NSURL*)bundleURL{return albumBundleURL;}
+- (NSDictionary*)infoDictionary{return @{@"CFBundleShortVersionString":@"99.0.0"};}
+@end
+#define NSBundle WCKBehaviorBundle
 #include "WCKAlbumSheet.m"
+#undef NSBundle
 static void set(NSString*k,id v){NSError*e;CHECK([modelStore setObject:v forKey:k error:&e]);CHECK(!e);}
-static BOOL touch(WCKKeyboardDriver*d,UIView*v){UITouch*t=[UITouch new];t.view=v;return [d gestureRecognizer:d.swipe shouldReceiveTouch:t];}
+static void drainKeyboard(void){NSArray*blocks=keyboardBlocks.copy;[keyboardBlocks removeAllObjects];for(dispatch_block_t b in blocks)b();}
+static void drag(BaseMsgContentViewController*vc,UIScrollView*scroll,CGFloat velocity){
+ unsigned before=dragCalls;CGPoint point={-77,12};lastTarget=NULL;
+ [vc scrollViewWillEndDragging:scroll withVelocity:(CGPoint){0.25,velocity} targetContentOffset:&point];
+ CHECK(dragCalls==before+1);CHECK(lastList==scroll&&lastTarget==&point);
+ CHECK(lastVelocity.x==0.25&&(isnan(velocity)?isnan(lastVelocity.y):lastVelocity.y==velocity));
+ CHECK(point.x==-70&&point.y==21);
+}
 int main(int argc,const char **argv){@autoreleasepool{
  CHECK(argc==2);NSString*mode=[NSString stringWithUTF8String:argv[1]];
  statuses=[NSMutableDictionary new];NSString*home=NSProcessInfo.processInfo.environment[@"HOME"];
  CHECK([home containsString:@"wck-behavior-"]);
+ albumBundleURL=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"WeChat.app"] isDirectory:YES];
+ CHECK([NSFileManager.defaultManager createDirectoryAtURL:albumBundleURL withIntermediateDirectories:YES attributes:nil error:NULL]);
+ NSString*albumVersion=[mode isEqual:@"album_old"]?@"8.0.69":([mode isEqual:@"album_malformed"]?@"Default":@"8.0.76");
+ NSDictionary*info=@{@"CFBundleIdentifier":@"com.tencent.xin",@"CFBundleExecutable":@"WeChat",@"CFBundleShortVersionString":albumVersion};
+ if(![mode isEqual:@"album_missing"]){NSData*data=[NSPropertyListSerialization dataWithPropertyList:info format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];CHECK([data writeToURL:[albumBundleURL URLByAppendingPathComponent:@"Info.plist"] atomically:YES]);}
  modelStore=[[WCKSettings alloc]initWithFileURL:[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"preferences/model.plist"]]];
  Method a=class_getClassMethod(WCKSettings.class,@selector(shared));Method b=class_getClassMethod(WCKSettings.class,@selector(modelShared));method_setImplementation(a,method_getImplementation(b));
  rejectAdjust=[mode isEqual:@"missing_adjust"];WCKInstallKeyboard();WCKInstallMomentsTime();WCKInstallAlbumSheet();
- CHECK([statuses[@"keyboardSwipe"]isEqual:@"ready"]);CHECK([statuses[@"albumSheet"]isEqual:@"ready"]);
+ CHECK([statuses[@"keyboardSwipe"]isEqual:@"ready"]);
+ for(id v in @[@"8.0.69",@"8.0.75",@"8.0.9",@"Default",@"8.0.76beta",@"8..76",@"8.0.-1",@76,NSNull.null])CHECK(!WCKAlbumVersionSupported(v));
+ for(NSString*v in @[@"8.0.76",@"8.0.100",@"8.1.0",@"9.0.0",@"8.0.76.1"])CHECK(WCKAlbumVersionSupported(v));
+ if([mode hasPrefix:@"album_"]){
+  CHECK(![statuses[@"albumSheet"]isEqual:@"ready"]);CHECK(sOriginalAlbumExpt==NULL);
+  ExptService*unchanged=[ExptService new];CHECK(![unchanged getExpt:@"clicfg_chat_album_pagesheet_mode" withBoolDef:NO]);
+  CHECK(experimentCalls==1);printf("BEHAVIOR album prerequisite rejected (display version ignored)\n");return 0;
+ }
+ CHECK([statuses[@"albumSheet"]isEqual:@"ready"]);
  if(rejectAdjust){CHECK(![statuses[@"momentsTime"]isEqual:@"ready"]);printf("BEHAVIOR missing adjust rejected\n");return 0;}
  CHECK([statuses[@"momentsTime"]isEqual:@"ready"]);
- MMInputToolView*h=[MMInputToolView new];h.window=[NSObject new];h.controller=[BaseMsgContentViewController new];
- UIView*text=[UIView new];text.superview=h;h.text=text;UIScrollView*scroll=[UIScrollView new];scroll.superview=text;
- UIView*deep=[UIView new];deep.superview=scroll;
- [h layoutSubviews];CHECK(h.gestures.count==1);[h didMoveToWindow];[h layoutSubviews];CHECK(h.gestures.count==1);
- WCKKeyboardDriver*d=objc_getAssociatedObject(h,&sKeyboardDriverKey);CHECK(d);CHECK(!d.swipe.enabled);
- set(@"keyboardSwipe",@YES);CHECK(!d.swipe.enabled);set(@"enabled",@YES);CHECK(d.swipe.enabled);
- CHECK(touch(d,deep));CHECK(touch(d,h));CHECK(!touch(d,[UIView new]));CHECK(!touch(d,nil));
- UIControl*button=[UIControl new];button.superview=h;UIView*buttonChild=[UIView new];buttonChild.superview=button;CHECK(!touch(d,buttonChild));
- deep.hidden=YES;CHECK(!touch(d,deep));deep.hidden=NO;
- CHECK([d gestureRecognizer:d.swipe shouldRecognizeSimultaneouslyWithGestureRecognizer:scroll.panGestureRecognizer]);
- UIScrollView*foreign=[UIScrollView new];foreign.superview=h;
- CHECK(![d gestureRecognizer:d.swipe shouldRecognizeSimultaneouslyWithGestureRecognizer:foreign.panGestureRecognizer]);
- UILongPressGestureRecognizer*lp=[[UILongPressGestureRecognizer alloc]initWithTarget:nil action:NULL];lp.view=scroll;
- CHECK(![d gestureRecognizer:d.swipe shouldRecognizeSimultaneouslyWithGestureRecognizer:lp]);
- d.swipe.state=UIGestureRecognizerStateRecognized;[d.swipe fire];CHECK(responderCalls==1);
- h.controller=[UIViewController new];[d.swipe fire];CHECK(responderCalls==1);
- h.controller=[BaseMsgContentViewController new];h.controller.presentedViewController=[UIViewController new];[d.swipe fire];CHECK(responderCalls==1);h.controller.presentedViewController=nil;
- UINavigationController*nav=[UINavigationController new];h.controller.navigationController=nav;nav.topViewController=[UIViewController new];[d.swipe fire];CHECK(responderCalls==1);nav.topViewController=h.controller;
- UIApplication.sharedApplication.applicationState=UIApplicationStateBackground;[d.swipe fire];CHECK(responderCalls==1);UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
- h.hidden=YES;[d.swipe fire];CHECK(responderCalls==1);h.hidden=NO;id window=h.window;h.window=nil;[d.swipe fire];CHECK(responderCalls==1);h.window=window;
- d.swipe.state=UIGestureRecognizerStateBegan;[d.swipe fire];CHECK(responderCalls==1);d.swipe.state=UIGestureRecognizerStateRecognized;
- set(@"keyboardSwipe",@NO);CHECK(!d.swipe.enabled);[d.swipe fire];CHECK(responderCalls==1);
- set(@"keyboardSwipe",@YES);denyResponder=YES;[d.swipe fire];CHECK(responderCalls==2);CHECK([statuses[@"keyboardSwipe.debug.last"]isEqual:@"输入栏拒绝响应"]);denyResponder=NO;
+ keyboardBlocks=[NSMutableArray new];
+ BaseMsgContentViewController*vc=[BaseMsgContentViewController new];vc.view=[UIView new];vc.viewLoaded=YES;vc.view.window=[NSObject new];
+ MMInputToolView*tool=[MMInputToolView new];KeyboardText*text=[KeyboardText new];tool.text=text;vc.fakeTool=tool;
+ UIScrollView*scroll=[UIScrollView new];scroll.window=vc.view.window;scroll.superview=vc.view;
+ scroll.bounds=CGRectMake(0,0,320,500);scroll.contentSize=(CGSize){320,1000};scroll.contentOffset=(CGPoint){0,490};
+ drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);set(@"keyboardSwipe",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);
+ set(@"enabled",@YES);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);CHECK(keyboardDelay==100*NSEC_PER_MSEC);CHECK(responderCalls==0);
+ drainKeyboard();CHECK(responderCalls==1&&text.isFirstResponder);CHECK(toolResponderCalls==0);text.firstResponder=NO;
+ // Original binary boundary cases: >= contentHeight-10, strictly > +0.5.
+ scroll.contentOffset=(CGPoint){0,489.99};drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);
+ scroll.contentOffset=(CGPoint){0,490};drag(vc,scroll,0.5);CHECK(keyboardBlocks.count==0);
+ drag(vc,scroll,-0.6);CHECK(keyboardBlocks.count==0);drag(vc,scroll,NAN);CHECK(keyboardBlocks.count==0);
+ drag(vc,scroll,0.50001);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==2);text.firstResponder=NO;
+ // The original KVC fallback is used only when toolView returned nil.
+ vc.fakeTool=nil;vc.inputToolView=tool;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==3);text.firstResponder=NO;vc.fakeTool=tool;vc.inputToolView=nil;
+ text.firstResponder=YES;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);text.firstResponder=NO;
+ tool.text=[NSObject new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);tool.text=text;
+ scroll.superview=nil;drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);scroll.superview=vc.view;
+ vc.presentedViewController=[UIViewController new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);vc.presentedViewController=nil;
+ UINavigationController*nav=[UINavigationController new];vc.navigationController=nav;nav.topViewController=[UIViewController new];drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==0);nav.topViewController=vc;
+ // Cancel delayed work on page leave, preference epoch, responder/target replacement.
+ drag(vc,scroll,0.6);vc.view.window=nil;drainKeyboard();CHECK(responderCalls==3);vc.view.window=scroll.window;
+ drag(vc,scroll,0.6);set(@"keyboardSwipe",@NO);set(@"keyboardSwipe",@YES);drainKeyboard();CHECK(responderCalls==3);
+ drag(vc,scroll,0.6);vc.fakeTool=[MMInputToolView new];drainKeyboard();CHECK(responderCalls==3);vc.fakeTool=tool;
+ drag(vc,scroll,0.6);tool.text=[KeyboardText new];drainKeyboard();CHECK(responderCalls==3);tool.text=text;
+ drag(vc,scroll,0.6);text.firstResponder=YES;drainKeyboard();CHECK(responderCalls==3);text.firstResponder=NO;
+ drag(vc,scroll,0.6);UIApplication.sharedApplication.applicationState=UIApplicationStateBackground;drainKeyboard();CHECK(responderCalls==3);UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
+ drag(vc,scroll,0.6);drag(vc,scroll,0.6);CHECK(keyboardBlocks.count==2);drainKeyboard();CHECK(responderCalls==4);text.firstResponder=NO;
+ drag(vc,scroll,0.6);drag(vc,scroll,0.1);drainKeyboard();CHECK(responderCalls==4);
+ denyResponder=YES;drag(vc,scroll,0.6);drainKeyboard();CHECK(responderCalls==5);CHECK([statuses[@"keyboardSwipe.debug.last"]isEqual:@"聊天文本框拒绝响应"]);denyResponder=NO;
+ CHECK(toolResponderCalls==0);CHECK(tool.gestures.count==0&&vc.view.gestures.count==0);
  // Precise album experiment only. Unrelated/nil values preserve original BOOL.
  ExptService*expt=[ExptService new];NSString*key=@"clicfg_chat_album_pagesheet_mode";
  CHECK(![expt getExpt:key withBoolDef:NO]);CHECK(experimentCalls==1);set(@"albumSheet",@YES);

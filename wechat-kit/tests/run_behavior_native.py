@@ -7,9 +7,14 @@ if sys.platform!='darwin':
  print('requires macOS Foundation; behavior model NOT executed');raise SystemExit(77)
 original={n:(r/'src'/n).read_text() for n in ['WCKKeyboard.m','WCKMomentsTime.m','WCKAlbumSheet.m']}
 variants={'baseline':{},
- 'mutant-keyboard-controller':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('![controller isKindOfClass:chat]', 'NO')},
- 'mutant-keyboard-no-layout':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('WCKBindKeyboard(host); // MMInputToolView only.', '(void)host; // MMInputToolView only.')},
+ 'mutant-keyboard-direction':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('velocity.y > 0.5', 'fabs(velocity.y) > 0.5')},
+ 'mutant-keyboard-bottom':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('content - 10.0', 'content - 20.0')},
+ 'mutant-keyboard-wrong-responder':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('[currentText becomeFirstResponder]', '[currentTool becomeFirstResponder]')},
+ 'mutant-keyboard-no-original':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('sOriginalKeyboardDrag(vc, cmd, scroll, velocity, target);', '(void)vc; (void)cmd; (void)scroll; (void)velocity; (void)target;')},
+ 'mutant-keyboard-no-delay':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('100 * NSEC_PER_MSEC', '0 * NSEC_PER_MSEC')},
+ 'mutant-keyboard-no-epoch':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('epoch != sKeyboardEpoch', '((void)epoch, NO)')},
  'mutant-time-no-restore':{'WCKMomentsTime.m':original['WCKMomentsTime.m'].replace('state.label.text = state.originalText;', '(void)state.originalText;')},
+ 'mutant-album-old-client':{'WCKAlbumSheet.m':original['WCKAlbumSheet.m'].replace('if (!WCKAlbumBundleSupported(NSBundle.mainBundle))', 'if (NO && !WCKAlbumBundleSupported(NSBundle.mainBundle))')},
  'mutant-album-all-keys':{'WCKAlbumSheet.m':original['WCKAlbumSheet.m'].replace('[key isEqualToString:@"clicfg_chat_album_pagesheet_mode"]', 'YES')},
 }
 rows=[]
@@ -26,7 +31,8 @@ with tempfile.TemporaryDirectory(prefix='wck-behavior-') as td:
   c=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
   assert c.returncode==0,(name,'COMPILE FAILED',c.stderr)
   runs=[]
-  for mode in (['normal','missing_adjust'] if name=='baseline' else ['normal']):
+  modes=['normal','missing_adjust','album_old','album_malformed','album_missing'] if name=='baseline' else (['album_old'] if name=='mutant-album-old-client' else ['normal'])
+  for mode in modes:
    home=d/mode;home.mkdir();env=dict(os.environ,HOME=str(home))
    p=subprocess.run([str(exe),mode],env=env,capture_output=True,text=True,timeout=20)
    runs.append(dict(case=mode,exit=p.returncode,stdout=p.stdout,stderr=p.stderr))

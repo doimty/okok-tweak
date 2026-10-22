@@ -7,13 +7,14 @@ if sys.platform!='darwin':
     print('SKIP: requires macOS Foundation runtime; NOT a passed test');raise SystemExit(77)
 cases=['normal','display_default','display_wrong','wrong_build','wrong_version','wrong_identifier',
  'runtime_identifier_mismatch','wrong_executable_name','wrong_executable_path','non_file_url',
- 'missing_then_ready','corrupt_then_ready','scalar_plist','numeric_version','missing_field','oversized','concurrent']
+ 'missing_then_ready','corrupt_then_ready','scalar_plist','numeric_version','missing_field','missing_versions','missing_identifier','missing_executable','extension_identifier','oversized','concurrent']
 names=['WCKHostIdentity.m','WCKRuntime.m','WCKEntryRegistry.m','WCKSettings.m','WCKPolicy.c']
 source={n:(root/'src'/n).read_text() for n in names}
 variants={
  'baseline':{},
  'mutant-memory-version':{'WCKHostIdentity.m':('NSDictionary *identity = parsed;','NSDictionary *identity = bundle.infoDictionary;')},
- 'mutant-unknown-build':{'WCKPolicy.c':('strcmp(version, "8.0.69") == 0 && strcmp(build, "8.0.69.33") == 0','(version && build)')},
+ 'mutant-version-lock':{'WCKHostIdentity.m':('*readable = YES;', '*readable = YES; if (![identity[@"CFBundleVersion"] isEqual:@"8.0.69.33"] || ![identity[@"CFBundleShortVersionString"] isEqual:@"8.0.69"]) return NO;')},
+ 'mutant-identity-bypass':{'WCKPolicy.c':('return bundle && strcmp(bundle, "com.tencent.xin") == 0;', '(void)bundle; return true;')},
  'mutant-cache-io-failure':{'WCKRuntime.m':('cached = readable;','cached = YES;')},
 }
 results=[]

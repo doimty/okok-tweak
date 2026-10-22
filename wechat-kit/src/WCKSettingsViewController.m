@@ -8,7 +8,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     dispatch_once(&once, ^{
         rows = @[
             @{@"id": @"toolbar", @"title": @"工具栏位"},
-            @{@"id": @"keyboardSwipe", @"title": @"上滑展开键盘", @"key": @"keyboardSwipe"},
+            @{@"id": @"keyboardSwipe", @"title": @"聊天底部滑动展开键盘", @"key": @"keyboardSwipe"},
             @{@"id": @"friendRank", @"title": @"群内好友时间榜"},
             @{@"id": @"readAll", @"title": @"底栏微信长按一键已读", @"key": @"readAll"},
             @{@"id": @"cleanUI", @"title": @"界面净化"},

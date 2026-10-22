@@ -8,9 +8,14 @@ int main(void) {
     CHECK(WCKHostMatches("com.tencent.xin", "8.0.69", "8.0.69.33"));
     CHECK(!WCKHostMatches("com.example.other", "8.0.69", "8.0.69.33"));
     CHECK(!WCKHostMatches("com.tencent.xin.WeChatNotificationServiceExtension", "8.0.69", "8.0.69.33"));
-    CHECK(!WCKHostMatches("com.tencent.xin", "8.0.70", "8.0.69.33"));
-    CHECK(!WCKHostMatches("com.tencent.xin", "8.0.69", "8.0.69.34"));
-    CHECK(!WCKHostMatches("com.tencent.xin", "8.0.69", "8.0.69.33suffix"));
+    CHECK(WCKHostMatches("com.tencent.xin", "8.0.70", "8.0.69.33"));
+    CHECK(WCKHostMatches("com.tencent.xin", "8.0.69", "8.0.69.34"));
+    CHECK(WCKHostMatches("com.tencent.xin", "8.0.69", "8.0.69.33suffix"));
+    CHECK(WCKHostMatches("com.tencent.xin", "Default", "future-build"));
+    CHECK(WCKHostMatches("com.tencent.xin", NULL, NULL));
+    CHECK(WCKHostMatches("com.tencent.xin", "", ""));
+    CHECK(!WCKHostMatches("com.example.other", NULL, NULL));
+    CHECK(!WCKHostMatches("com.tencent.xin.WeChatNotificationServiceExtension", NULL, NULL));
     CHECK(!WCKHostMatches(NULL, NULL, NULL));
     CHECK(WCKTypeMatches("v","v"));
     CHECK(WCKTypeMatches("r@","@"));

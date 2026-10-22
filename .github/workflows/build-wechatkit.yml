@@ -1,9 +1,11 @@
-name: Build WeChatKit alpha5
+name: Build WeChatKit alpha6
 
 on:
   workflow_dispatch:
   push:
-    branches: [fix/wechatkit-feature-paths-alpha5-20261021]
+    branches:
+      - fix/wechatkit-feature-paths-alpha5-20261021
+      - fix/wechatkit-alpha6-svg-provenance-20261022
     paths:
       - 'wechat-kit/**'
       - '.github/workflows/build-wechatkit.yml'
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   package:
-    name: WeChatKit alpha5 (roothide)
+    name: WeChatKit alpha6 (roothide)
     runs-on: macos-14
     timeout-minutes: 30
     env:
@@ -111,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wechatkit-alpha5-roothide
+          name: wechatkit-alpha6-roothide
           path: |
             wechat-kit/packages/*.deb
             wechat-kit/build.log

@@ -2,125 +2,105 @@
 #import <objc/message.h>
 #import "WCKRuntime.h"
 #import "WCKSettings.h"
+#import <math.h>
 
-static char sKeyboardDriverKey;
-static NSHashTable *sKeyboardDrivers;
-static void (*sOriginalMove)(UIView *, SEL);
-static void (*sOriginalLayout)(UIView *, SEL);
-
-// Bound the walk and require genuine membership. No foreign controls/recording
-// gestures are accepted even when another plugin gives us a synthetic touch.
-static BOOL WCKKeyboardContains(UIView *root, UIView *view, BOOL excludeControls) {
-    if (!root || !view) return NO;
-    for (NSUInteger depth = 0; view && depth < 32; ++depth, view = view.superview) {
-        if (view.hidden || view.alpha < 0.01) return NO;
-        if (view == root) return YES;
-        if (excludeControls && [view isKindOfClass:UIControl.class]) return NO;
-    }
-    return NO;
-}
-
-@interface WCKKeyboardDriver : NSObject <UIGestureRecognizerDelegate>
-@property (nonatomic, weak) UIView *host;
-@property (nonatomic, strong) UISwipeGestureRecognizer *swipe;
-- (void)refresh;
-- (void)swiped:(UISwipeGestureRecognizer *)gesture;
+// Reference UUID 525BA5E4... installs BaseMsgContentViewController's
+// scrollViewWillEndDragging:withVelocity:targetContentOffset: at 0x2e29c4.
+// The original calls the host first, then tests bottom<=10pt and velocity.y>0.5,
+// and after 100ms asks toolView.textView to becomeFirstResponder.
+static void (*sOriginalKeyboardDrag)(id, SEL, UIScrollView *, CGPoint, CGPoint *);
+static char sKeyboardStateKey;
+static NSUInteger sKeyboardEpoch;
+@interface WCKKeyboardPending : NSObject
+@property(nonatomic) NSUInteger generation;
 @end
+@implementation WCKKeyboardPending @end
 
-@implementation WCKKeyboardDriver
-- (void)refresh {
-    NSAssert(NSThread.isMainThread, @"UI must run on main thread");
-    self.swipe.enabled = WCKEnabled(@"keyboardSwipe") && self.host.window != nil;
+static BOOL WCKKeyboardVisible(UIViewController *vc, UIScrollView *scroll) {
+    return NSThread.isMainThread && WCKEnabled(@"keyboardSwipe") &&
+        UIApplication.sharedApplication.applicationState == UIApplicationStateActive &&
+        [vc isKindOfClass:UIViewController.class] && vc.isViewLoaded && vc.view.window &&
+        !vc.view.hidden && vc.view.alpha >= 0.01 && !vc.presentedViewController &&
+        (!vc.navigationController || vc.navigationController.topViewController == vc) &&
+        [scroll isKindOfClass:UIScrollView.class] && scroll.window &&
+        !scroll.hidden && scroll.alpha >= 0.01 && [scroll isDescendantOfView:vc.view];
 }
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
-    UIView *host = self.host;
-    if (!host.window || !WCKEnabled(@"keyboardSwipe") || host.hidden || host.alpha < 0.01)
-        return NO;
-    if (recognizer != self.swipe || recognizer.view != host) return NO;
-    // Never steal the voice-record, send, attachment or expression buttons.
-    return WCKKeyboardContains(host, touch.view, YES);
+static id WCKKeyboardTool(UIViewController *vc) {
+    SEL selector = NSSelectorFromString(@"toolView");
+    if (!WCKMethodMatches(object_getClass(vc), selector, "@", NULL, 0)) return nil;
+    id tool = ((id (*)(id,SEL))objc_msgSend)(vc, selector);
+    // Original's narrowly named fallback, not a scan of unknown private ivars.
+    if (!tool) tool = [vc valueForKey:@"_inputToolView"];
+    return [tool isKindOfClass:UIView.class] ? tool : nil;
 }
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer
-        shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
-    UIView *host = self.host;
-    if (recognizer != self.swipe || recognizer.view != host || !host.window ||
-        !WCKEnabled(@"keyboardSwipe") || ![other isKindOfClass:UIPanGestureRecognizer.class] ||
-        ![other.view isKindOfClass:UIScrollView.class] ||
-        ((UIScrollView *)other.view).panGestureRecognizer != other ||
-        !WCKKeyboardContains(host, other.view, YES)) return NO;
-    SEL getter = NSSelectorFromString(@"getGrowTextView");
-    if (!WCKMethodMatches(object_getClass(host), getter, "@", NULL, 0)) return NO;
-    id text = ((id (*)(id,SEL))objc_msgSend)(host, getter);
-    return [text isKindOfClass:UIView.class] && WCKKeyboardContains(text, other.view, YES);
+static UIResponder *WCKKeyboardText(id tool) {
+    SEL selector = NSSelectorFromString(@"textView");
+    if (!tool || !WCKMethodMatches(object_getClass(tool), selector, "@", NULL, 0)) return nil;
+    id text = ((id (*)(id,SEL))objc_msgSend)(tool, selector);
+    if (![text isKindOfClass:UIResponder.class] ||
+        !WCKMethodMatches(object_getClass(text), @selector(isFirstResponder), @encode(BOOL), NULL, 0) ||
+        !WCKMethodMatches(object_getClass(text), @selector(becomeFirstResponder), @encode(BOOL), NULL, 0)) return nil;
+    return text;
 }
-- (void)swiped:(UISwipeGestureRecognizer *)gesture {
-    UIView *host = self.host;
-    if (gesture != self.swipe || gesture.view != host ||
-        gesture.state != UIGestureRecognizerStateRecognized || !host.window ||
-        host.hidden || host.alpha < 0.01 ||
-        UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
-        !WCKEnabled(@"keyboardSwipe")) return;
-    SEL controllerSelector = NSSelectorFromString(@"getViewController");
-    id controller = ((id (*)(id, SEL))objc_msgSend)(host, controllerSelector);
-    Class chat = NSClassFromString(@"BaseMsgContentViewController");
-    if (!chat || ![controller isKindOfClass:chat] ||
-        ![controller isKindOfClass:UIViewController.class]) return;
-    UIViewController *vc = controller;
-    if (vc.presentedViewController || (vc.navigationController &&
-        vc.navigationController.topViewController != vc)) return;
-    // Use the host's normal responder state machine; do not set private ivars/mode numbers.
-    BOOL accepted = [host becomeFirstResponder];
-    WCKSetModuleStatus(@"keyboardSwipe.debug.last", accepted ? @"已请求输入栏响应" : @"输入栏拒绝响应");
-}
-@end
-
-static void WCKBindKeyboard(UIView *host) {
+static void WCKKeyboardWillEndDragging(UIViewController *vc, SEL cmd,
+        UIScrollView *scroll, CGPoint velocity, CGPoint *target) {
+    // Preserve the host's parameters and target pointer; exactly one original call.
+    sOriginalKeyboardDrag(vc, cmd, scroll, velocity, target);
     if (!NSThread.isMainThread) return;
-    WCKKeyboardDriver *driver = objc_getAssociatedObject(host, &sKeyboardDriverKey);
-    if (!driver && host.window) {
-        driver = [WCKKeyboardDriver new];
-        driver.host = host;
-        driver.swipe = [[UISwipeGestureRecognizer alloc] initWithTarget:driver
-            action:@selector(swiped:)];
-        driver.swipe.direction = UISwipeGestureRecognizerDirectionUp;
-        driver.swipe.cancelsTouchesInView = NO;
-        driver.swipe.delaysTouchesBegan = NO;
-        driver.swipe.delegate = driver;
-        objc_setAssociatedObject(host, &sKeyboardDriverKey, driver, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [host addGestureRecognizer:driver.swipe];
-        [sKeyboardDrivers addObject:driver];
+    WCKKeyboardPending *state = objc_getAssociatedObject(vc, &sKeyboardStateKey);
+    if (state) ++state.generation; // Later gestures invalidate a pending request.
+    @try {
+        if (!WCKKeyboardVisible(vc, scroll)) return;
+        CGFloat offset = scroll.contentOffset.y, height = scroll.bounds.size.height;
+        CGFloat content = scroll.contentSize.height;
+        if (!isfinite(offset) || !isfinite(height) || !isfinite(content) ||
+            !isfinite(velocity.y) || height <= 0 || content < 0 ||
+            !(offset + height >= content - 10.0) || !(velocity.y > 0.5)) return;
+        id tool = WCKKeyboardTool(vc);
+        UIResponder *text = WCKKeyboardText(tool);
+        if (!text || text.isFirstResponder) return;
+        if (!state) {
+            state = [WCKKeyboardPending new];
+            objc_setAssociatedObject(vc, &sKeyboardStateKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        NSUInteger generation = ++state.generation, epoch = sKeyboardEpoch;
+        __weak UIViewController *weakVC = vc;
+        __weak UIScrollView *weakScroll = scroll;
+        __weak id weakTool = tool;
+        __weak UIResponder *weakText = text;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
+            dispatch_get_main_queue(), ^{
+                @try {
+                    UIViewController *current = weakVC; UIScrollView *list = weakScroll;
+                    if (!current || epoch != sKeyboardEpoch ||
+                        state.generation != generation || !WCKKeyboardVisible(current, list)) return;
+                    id currentTool = WCKKeyboardTool(current);
+                    UIResponder *currentText = WCKKeyboardText(currentTool);
+                    if (!currentTool || currentTool != weakTool || !currentText ||
+                        currentText != weakText || currentText.isFirstResponder) return;
+                    BOOL accepted = [currentText becomeFirstResponder];
+                    WCKSetModuleStatus(@"keyboardSwipe.debug.last", accepted ?
+                        @"已请求聊天文本框响应" : @"聊天文本框拒绝响应");
+                } @catch (__unused NSException *exception) {
+                    WCKSetModuleStatus(@"keyboardSwipe.debug.last", @"文本框状态变化，已跳过");
+                }
+            });
+    } @catch (__unused NSException *exception) {
+        WCKSetModuleStatus(@"keyboardSwipe.debug.last", @"聊天输入接口异常，已保留原行为");
     }
-    [driver refresh];
 }
-
-static void WCKKeyboardMoved(UIView *host, SEL selector) {
-    if (sOriginalMove) sOriginalMove(host, selector);
-    WCKBindKeyboard(host);
-}
-static void WCKKeyboardLayout(UIView *host, SEL selector) {
-    if (sOriginalLayout) sOriginalLayout(host, selector);
-    WCKBindKeyboard(host); // MMInputToolView only. Never traverse windows/chat contents.
-}
-
 void WCKInstallKeyboard(void) {
-    Class cls = NSClassFromString(@"MMInputToolView");
-    if (!WCKMethodMatches(cls, NSSelectorFromString(@"getViewController"), "@", NULL, 0) ||
-        !WCKMethodMatches(cls, NSSelectorFromString(@"getGrowTextView"), "@", NULL, 0) ||
-        !WCKMethodMatches(cls, @selector(becomeFirstResponder), @encode(BOOL), NULL, 0)) {
-        WCKSetModuleStatus(@"keyboardSwipe", @"ABI 不匹配"); return;
+    Class cls = NSClassFromString(@"BaseMsgContentViewController");
+    if (!WCKMethodMatches(cls, NSSelectorFromString(@"toolView"), "@", NULL, 0)) {
+        WCKSetModuleStatus(@"keyboardSwipe", @"聊天输入栏 getter ABI 不可用"); return;
     }
-    sKeyboardDrivers = [NSHashTable weakObjectsHashTable];
-    BOOL moved = WCKInstallHook(cls, @selector(didMoveToWindow), (IMP)WCKKeyboardMoved,
-        (IMP *)&sOriginalMove, "v", NULL, 0);
-    BOOL layout = WCKInstallHook(cls, @selector(layoutSubviews), (IMP)WCKKeyboardLayout,
-        (IMP *)&sOriginalLayout, "v", NULL, 0);
-    BOOL installed = moved || layout;
-    WCKSetModuleStatus(@"keyboardSwipe", installed ? @"ready" : @"Hook 不可用");
-    if (installed) {
-        // NotificationCenter retains this process-lifetime observer; no view controller captured.
-        [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
-            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
-                for (WCKKeyboardDriver *driver in sKeyboardDrivers.allObjects) [driver refresh];
-            }];
-    }
+    const char *args[] = {"@", @encode(CGPoint), @encode(CGPoint *)};
+    BOOL installed = WCKInstallHook(cls,
+        NSSelectorFromString(@"scrollViewWillEndDragging:withVelocity:targetContentOffset:"),
+        (IMP)WCKKeyboardWillEndDragging, (IMP *)&sOriginalKeyboardDrag, "v", args, 3);
+    WCKSetModuleStatus(@"keyboardSwipe", installed && sOriginalKeyboardDrag ? @"ready" : @"聊天滚动回调 ABI 不可用");
+    if (installed) [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
+        object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+            ++sKeyboardEpoch;
+        }];
 }

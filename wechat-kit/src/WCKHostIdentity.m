@@ -17,15 +17,12 @@ BOOL WCKHostMatchesBundle(NSBundle *bundle, BOOL *readable) {
         format:NULL error:NULL];
     if (![parsed isKindOfClass:NSDictionary.class]) return NO;
     NSDictionary *identity = parsed;
-    for (NSString *key in @[@"CFBundleIdentifier", @"CFBundleShortVersionString",
-                            @"CFBundleVersion", @"CFBundleExecutable"]) {
+    for (NSString *key in @[@"CFBundleIdentifier", @"CFBundleExecutable"]) {
         id value = identity[key];
         if (![value isKindOfClass:NSString.class] || ![value length] || [value length] > 256) return NO;
     }
     *readable = YES;
     NSString *identifier = identity[@"CFBundleIdentifier"];
-    NSString *version = identity[@"CFBundleShortVersionString"];
-    NSString *build = identity[@"CFBundleVersion"];
     NSString *name = identity[@"CFBundleExecutable"];
     if (![identifier isEqualToString:bundle.bundleIdentifier] || ![name isEqualToString:@"WeChat"])
         return NO;
@@ -33,5 +30,5 @@ BOOL WCKHostMatchesBundle(NSBundle *bundle, BOOL *readable) {
     NSString *expectedPath = expectedExecutable.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
     NSString *actualPath = executable.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
     if (![expectedPath isEqualToString:actualPath]) return NO;
-    return WCKHostMatches(identifier.UTF8String, version.UTF8String, build.UTF8String);
+    return WCKHostMatches(identifier.UTF8String, NULL, NULL);
 }

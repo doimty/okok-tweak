@@ -1,4 +1,28 @@
-# WeChatKit 0.1.0-alpha5 · 覆盖与触发路径增量
+# WeChatKit alpha6 候选 · 原链纠错，未发布
+
+## 2026-10-22 更正（优先于后文历史记录）
+- 上轮误将 `WCKSVG.m` 覆盖成932B/15行，并把错误提交 `a7ded5ed4eff1f93d78f97ef838f7c963f58383e` 推至alpha6新分支。前述“修复完成/编译通过/严格对齐/功能可用”的聊天结论全部撤回。
+- 本地已从保存输出精确恢复完整参数层候选，恢复基线SHA256为 `3de32bfb96460c523c3d8e1fda96d3433186627547fbd6299425820db0f0c7bb`。有限CAS、初次setter重入、弱别名隔离与return-self首个意图保留已落地；真实别名会停止刷新，S2功能仍未完整闭环，不准出包。
+- 当前SVG SHA256为 `79d207476526ab2f95c7b17d4173da0ed626fbe71b85760f95dbe4b024f1b308`；以工作区 `wechatkit-alpha6-recovery-20261022/CURRENT.json`、`s2-revision/RESULT.md` 和源哈希绑定的 `checks-final/results.json` 为当前结果。a395b14e、2bf88055 中间态均已撤回。
+- 当前本地15生产源的arm64/arm64e对象编译已重新通过，实际Apple SDK16.4；Foundation/真实UIKit运行及真机功能验收未完成。不得把Python语法、源码合同或对象编译称功能通过。
+- 当前HEAD和远端alpha6分支仍是上述错误提交；本轮恢复和增量只在本地，未再次commit/push/dispatch，也未安装/重启/清未读。UI美化暂停，先核功能。
+- 恢复来源、真实失败和验证矩阵在工作区 `wechatkit-alpha6-recovery-20261022/`。
+
+用户已否定 alpha5 的键盘/已读/半屏相册实机结果，并报告 SVG 部分图标放大。以下 alpha5 章节仅是历史交付记录，不代表本轮真机通过。
+
+- **键盘**：移除输入栏 swipe，按原聊天列表 `scrollViewWillEndDragging:withVelocity:targetContentOffset:` 重写，保留原参数/原 IMP，底部10pt、正向纵速>0.5、100ms后对 `toolView.textView` 请求响应。Luna 单项静态审查允许进入云回归，不是设备通过。
+- **已读**：按真实 MMContext/MMServiceWrapper 接收对象验证 methodSignatureForSelector；不强判中心类、不解包代理。defaultCenter 缺失时才走已核原生 MMContext.currentContext；现有入口空值/错误/异常不换源。新增真实NSProxy及无第三方入口回归候选；Luna只审三个helper，整模块仍待原生测试/独立验收。
+- **整体版本锁**：删除精确8.0.69/8.0.69.33名单，保留真实主包身份与各方法ABI；不宣称全版本支持。
+- **半屏相册**：按原功能前提，真实磁盘版本低于8.0.76不装该实验hook，显示不支持；这不重新锁死其它功能，也不宣称8.0.76+真机已验证。
+- **SVG**：工厂color实参改色候选保留，无CGImage重建/post-tint。有限CAS和初次赋值重入保护之外，现以同锁弱隔离防真别名重认领，保留首次return-self变换并仅合并相同末尾重复；真实别名仍停止自动刷新，不宣称S2完整解决。30生产对象与模型4个负例双架构仅编译，尺寸/覆盖/深浅色和关闭恢复未获原生/真机验收。
+
+本地证据包括生产C测试、源码合同、Apple SDK16.4双架构对象编译（SDK目录名16.5）。Foundation模型原生执行、UIKit运行、云链接打包与真机修复均未完成。版本号、构建工作流、SOURCE-SHA256.json仍保留alpha5发布基线，不作为alpha6交付清单。历史曾有错误提交推送，当前恢复未再次提交或推送；不得把本页当出包通过证明。
+
+详细原始证据、主审勘误和剩余门禁在工作区 `wechatkit-alpha6-20261021/`，不把专有二进制或私有采样写入公开仓库。
+
+---
+
+# WeChatKit 0.1.0-alpha5 · 覆盖与触发路径增量（历史）
 
 用户反馈alpha4改色可见但不全，其它功能未生效，要求移除右上WCK并继续完善。此版保留收纳/设置列表入口，SVG覆盖12条工厂和4种来源限定变换；键盘/已读补布局挂载、取消和目标替换保护；新增朋友圈列表详细时间与聊天半屏相册。共5项候选，其余8项未实现。
 

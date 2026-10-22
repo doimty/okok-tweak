@@ -2,19 +2,79 @@
 #import <objc/message.h>
 #import "WCKRuntime.h"
 #import "WCKSettings.h"
+#import "WCKPolicy.h"
 
 static char sReadDriverKey;
 static NSHashTable *sReadDrivers;
 static void (*sOriginalTabMove)(UIView *, SEL);
 static void (*sOriginalTabLayout)(UIView *, SEL);
 
-static id WCKServiceCenter(void) {
+// Validate the receiver, not the requested class: host services may be NSProxy.
+// Keep all sends on the wrapper; never bypass its account/lifetime semantics.
+static BOOL WCKReadSignatureMatches(id receiver, SEL selector, const char *result,
+        const char *const *arguments, NSUInteger count) {
+    NSMethodSignature *signature = [receiver methodSignatureForSelector:selector];
+    if (!signature || signature.numberOfArguments != count + 2 ||
+        !WCKTypeMatches(signature.methodReturnType, result) ||
+        !WCKTypeMatches([signature getArgumentTypeAtIndex:0], "@") ||
+        !WCKTypeMatches([signature getArgumentTypeAtIndex:1], ":")) return NO;
+    for (NSUInteger i = 0; i < count; ++i)
+        if (!WCKTypeMatches([signature getArgumentTypeAtIndex:i + 2], arguments[i])) return NO;
+    return YES;
+}
+static void WCKReadRequire(BOOL valid, NSString *reason) {
+    if (!valid) @throw [NSException exceptionWithName:@"WCKReadAllContract" reason:reason userInfo:nil];
+}
+static NSString *WCKReadFailure(NSException *exception, NSString *stage, BOOL started) {
+    NSString *reason = [exception.name isEqualToString:@"WCKReadAllContract"]
+        ? exception.reason : [stage stringByAppendingString:@"异常"];
+    return [reason stringByAppendingString:started ? @"，操作已停止，未继续处理剩余会话。" : @"，未做修改。"];
+}
+static Class WCKReadContextEntry(SEL *selector) {
     Class cls = NSClassFromString(@"MMServiceCenter");
-    return ((id (*)(id,SEL))objc_msgSend)(cls, NSSelectorFromString(@"defaultCenter"));
+    *selector = NSSelectorFromString(@"defaultCenter");
+    // The reference entry may be supplied by another plugin. Only when that
+    // selector is absent, use the verified native MMContext entry. Never switch
+    // account sources after a nil result, a bad signature, or a thrown exception.
+    if (!cls || !class_getClassMethod(cls, *selector)) {
+        cls = NSClassFromString(@"MMContext");
+        *selector = NSSelectorFromString(@"currentContext");
+    }
+    return cls;
+}
+static id WCKServiceCenter(void) {
+    SEL selector;
+    Class cls = WCKReadContextEntry(&selector);
+    NSString *entry = NSStringFromSelector(selector);
+    WCKReadRequire(cls && class_getClassMethod(cls, selector), @"账号上下文入口不可用");
+    WCKReadRequire(WCKReadSignatureMatches(cls, selector, "@", NULL, 0),
+        [entry stringByAppendingString:@" ABI 不匹配"]);
+    id center = ((id (*)(id,SEL))objc_msgSend)(cls, selector);
+    WCKReadRequire(center != nil, [entry stringByAppendingString:@" 返回空上下文"]);
+    return center;
 }
 static id WCKService(id center, NSString *name) {
-    return ((id (*)(id,SEL,Class))objc_msgSend)(center, NSSelectorFromString(@"getService:"),
-        NSClassFromString(name));
+    Class requested = NSClassFromString(name);
+    WCKReadRequire(requested != Nil, [name stringByAppendingString:@" 类不可用"]);
+    const char *serviceArgs[] = {"#"};
+    SEL selector = NSSelectorFromString(@"getService:");
+    WCKReadRequire(center && WCKReadSignatureMatches(center, selector, "@", serviceArgs, 1),
+        @"当前上下文 getService: ABI 不匹配");
+    id service = ((id (*)(id,SEL,Class))objc_msgSend)(center, selector, requested);
+    WCKReadRequire(service != nil, [name stringByAppendingString:@" 服务为空"]);
+    WCKReadRequire([service isKindOfClass:requested], [name stringByAppendingString:@" 服务类型不匹配"]);
+    if ([name isEqualToString:@"CMessageMgr"]) {
+        const char *objectArgs[] = {"@"};
+        const char *clearArgs[] = {"@", "I", "I"};
+        WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"GetUnReadCount:"), "I", objectArgs, 1),
+            @"CMessageMgr GetUnReadCount: ABI 不匹配");
+        WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"ClearUnRead:FromID:ToID:"), "v", clearArgs, 3),
+            @"CMessageMgr ClearUnRead:FromID:ToID: ABI 不匹配");
+    } else {
+        WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"GetUserNamesOnSessionList"), "@", NULL, 0),
+            @"MMNewSessionMgr GetUserNamesOnSessionList ABI 不匹配");
+    }
+    return service;
 }
 
 @interface WCKReadAllDriver : NSObject <UIGestureRecognizerDelegate>
@@ -89,6 +149,8 @@ static id WCKService(id center, NSString *name) {
         center:(id)center manager:(id)manager sessions:(id)sessions cleared:(NSUInteger)cleared
         generation:(NSUInteger)generation {
     if (generation != self.generation || !self.busy) return;
+    NSString *stage = @"账号及服务复核";
+    @try {
     if (!WCKEnabled(@"readAll") || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
         ![self firstItem] || self.target != [self firstItem] || !self.mainFrame || WCKServiceCenter() != center ||
         WCKService(center, @"CMessageMgr") != manager ||
@@ -99,16 +161,20 @@ static id WCKService(id center, NSString *name) {
     SEL countSelector = NSSelectorFromString(@"GetUnReadCount:");
     SEL clearSelector = NSSelectorFromString(@"ClearUnRead:FromID:ToID:");
     for (NSUInteger i = index; i < end; ++i) {
+        stage = @"账号及服务复核";
         if (!WCKEnabled(@"readAll") || generation != self.generation ||
             WCKServiceCenter() != center || WCKService(center, @"CMessageMgr") != manager ||
             WCKService(center, @"MMNewSessionMgr") != sessions) {
             [self finish:@"操作已停止，未继续处理剩余会话。"]; return;
         }
         NSString *name = names[i];
+        stage = @"清理前未读数读取";
         unsigned int before = ((unsigned int (*)(id,SEL,id))objc_msgSend)(manager, countSelector, name);
         if (!before) continue;
+        stage = @"未读清理调用";
         ((void (*)(id,SEL,id,unsigned int,unsigned int))objc_msgSend)
             (manager, clearSelector, name, 0, UINT32_MAX);
+        stage = @"清理后未读数核实";
         unsigned int after = ((unsigned int (*)(id,SEL,id))objc_msgSend)(manager, countSelector, name);
         if (!after) ++cleared;
         else { [self finish:@"清理后仍有未读，未能核实全部完成。"]; return; }
@@ -121,6 +187,9 @@ static id WCKService(id center, NSString *name) {
             [self consume:names index:end center:center manager:manager sessions:sessions cleared:cleared generation:generation];
         });
     }
+    } @catch (NSException *exception) {
+        [self finish:WCKReadFailure(exception, stage, YES)];
+    }
 }
 - (void)pressed:(UILongPressGestureRecognizer *)recognizer {
     if (recognizer != self.press) return;
@@ -131,14 +200,14 @@ static id WCKService(id center, NSString *name) {
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
         !self.press.enabled || ![self firstItem] || self.target != [self firstItem] ||
         recognizer.view != self.target || !self.mainFrame) return;
+    NSString *stage = @"账号上下文解析";
+    @try {
     id center = WCKServiceCenter();
+    stage = @"CMessageMgr 服务解析及签名";
     id manager = WCKService(center, @"CMessageMgr");
+    stage = @"MMNewSessionMgr 服务解析及签名";
     id sessions = WCKService(center, @"MMNewSessionMgr");
-    if (![center isKindOfClass:NSClassFromString(@"MMServiceCenter")] ||
-        ![manager isKindOfClass:NSClassFromString(@"CMessageMgr")] ||
-        ![sessions isKindOfClass:NSClassFromString(@"MMNewSessionMgr")]) {
-        [self finish:@"当前账号的消息服务不可用，未做修改。"]; return;
-    }
+    stage = @"会话列表读取及快照";
     id raw = ((id (*)(id,SEL))objc_msgSend)(sessions, NSSelectorFromString(@"GetUserNamesOnSessionList"));
     if (![raw isKindOfClass:NSArray.class] || [raw count] > 5000) {
         [self finish:@"会话列表不可用或过大，未做修改。"]; return;
@@ -158,6 +227,9 @@ static id WCKService(id center, NSString *name) {
     self.busy = YES;
     NSUInteger generation = ++self.generation;
     [self consume:names.copy index:0 center:center manager:manager sessions:sessions cleared:0 generation:generation];
+    } @catch (NSException *exception) {
+        [self finish:WCKReadFailure(exception, stage, self.busy)];
+    }
 }
 @end
 
@@ -186,22 +258,20 @@ static void WCKReadBarLayout(UIView *bar, SEL selector) {
 }
 
 void WCKInstallReadAll(void) {
-    Class center = NSClassFromString(@"MMServiceCenter");
+    SEL entry;
+    Class center = WCKReadContextEntry(&entry);
     Class manager = NSClassFromString(@"CMessageMgr");
     Class sessions = NSClassFromString(@"MMNewSessionMgr");
     Class bar = NSClassFromString(@"MMTabBar");
-    const char *serviceArgs[] = {"#"};
-    const char *objectArgs[] = {"@"};
-    const char *clearArgs[] = {"@", "I", "I"};
-    // defaultCenter may be supplied by a category. Do not trust static presence.
-    BOOL matched = WCKMethodMatches(object_getClass(center), NSSelectorFromString(@"defaultCenter"), "@", NULL, 0)
-        && WCKMethodMatches(center, NSSelectorFromString(@"getService:"), "@", serviceArgs, 1)
-        && WCKMethodMatches(sessions, NSSelectorFromString(@"GetUserNamesOnSessionList"), "@", NULL, 0)
-        && WCKMethodMatches(manager, NSSelectorFromString(@"ClearUnRead:FromID:ToID:"), "v", clearArgs, 3)
-        && WCKMethodMatches(manager, NSSelectorFromString(@"GetUnReadCount:"), "I", objectArgs, 1)
+    // Installation/layout never resolve account services or write user data.
+    // Same entry selection at installation and invocation; no service getter runs here.
+    if (!WCKMethodMatches(object_getClass(center), entry, "@", NULL, 0)) {
+        WCKSetModuleStatus(@"readAll", @"账号上下文入口 ABI 不匹配"); return;
+    }
+    BOOL matched = manager && sessions
         && WCKMethodMatches(bar, NSSelectorFromString(@"tabBarItemViews"), "@", NULL, 0)
         && NSClassFromString(@"NewMainFrameViewController");
-    if (!matched) { WCKSetModuleStatus(@"readAll", @"服务或底栏 ABI 不匹配"); return; }
+    if (!matched) { WCKSetModuleStatus(@"readAll", @"服务类或底栏 ABI 不匹配"); return; }
     sReadDrivers = [NSHashTable weakObjectsHashTable];
     BOOL layoutInstalled = WCKInstallHook(bar, @selector(layoutSubviews), (IMP)WCKReadBarLayout,
         (IMP *)&sOriginalTabLayout, "v", NULL, 0);

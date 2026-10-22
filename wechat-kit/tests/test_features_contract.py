@@ -18,23 +18,30 @@ class FeatureContracts(unittest.TestCase):
         self.assertLess(src.index('*original = fallback;'),src.index('hook(cls, selector, replacement, original);'))
         self.assertIn('if (!*original) { *original = fallback; return NO; }',src)
         self.assertIn('method_getNumberOfArguments(method) != count + 2',src)
-    def test_local_reversible_keyboard(self):
+    def test_original_chat_scroll_keyboard(self):
         src=(root/'src/WCKKeyboard.m').read_text()
-        for s in ['NSClassFromString(@"MMInputToolView")','isKindOfClass:UIControl.class',
-                  'cancelsTouchesInView = NO','NSHashTable weakObjectsHashTable',
-                  'objc_getAssociatedObject(host','self.swipe.enabled = WCKEnabled',
-                  'navigationController.topViewController != vc','[host becomeFirstResponder]']:
+        for s in ['NSClassFromString(@"BaseMsgContentViewController")',
+                  'scrollViewWillEndDragging:withVelocity:targetContentOffset:',
+                  '@encode(CGPoint)', '@encode(CGPoint *)', 'content - 10.0', 'velocity.y > 0.5',
+                  '100 * NSEC_PER_MSEC', 'NSSelectorFromString(@"textView")',
+                  '[currentText becomeFirstResponder]', 'epoch != sKeyboardEpoch',
+                  'currentText != weakText']:
             self.assertIn(s,src)
-        self.assertNotIn('setValue:',src)
+        self.assertEqual(src.count('sOriginalKeyboardDrag(vc, cmd, scroll, velocity, target);'),1)
+        self.assertLess(src.index('sOriginalKeyboardDrag(vc, cmd, scroll, velocity, target);'),
+                        src.index('WCKKeyboardVisible(vc, scroll)'))
+        for forbidden in ['setValue:', 'UISwipeGestureRecognizer', 'addGestureRecognizer:']:
+            self.assertNotIn(forbidden,src)
     def test_svg_global_source_and_no_caller_mutation(self):
         src=(root/'src/WCKSVG.m').read_text()
         policy=(root/'src/WCKPolicy.c').read_text()
         self.assertIn('!restricted || WCKNameInCSV(name, include)',policy)
-        for s in ['WCKSVGSelectRGB(WCKSettings.shared.snapshot, descriptor.name,',
-                  'existing ? existing.source : result','named || file || config || adapted || data',
-                  'objc_setAssociatedObject(image, &sDescriptorKey','sFactoryDepth++ == 0']:
+        for s in ['WCKSVGSelectRGB(WCKSettings.shared.snapshot, request.name,',
+                  'NSMapTable mapTableWithKeyOptions:', 'WCKSVGNameScope',
+                  'WCKSVGReplayStep', 'sFactoryDepth++ == 0']:
             self.assertIn(s,src)
-        for s in ['setTintColor:', 'imageConfigWithTintColor:', 'NSURLSession']:
+        for s in ['setTintColor:', 'imageConfigWithTintColor:', 'NSURLSession',
+                  'initWithCGImage:', 'imageWithTintColor:']:
             self.assertNotIn(s,src)
     def test_unread_only_action_and_bounded(self):
         src=(root/'src/WCKReadAll.m').read_text()
@@ -46,6 +53,15 @@ class FeatureContracts(unittest.TestCase):
             self.assertIn(s,src)
         for s in ['DeleteSession','DeleteMsgButKeepSession','RemoveMessages','NSLog(']:
             self.assertNotIn(s,src)
+    def test_unread_native_entry_before_binding(self):
+        src=(root/'src/WCKReadAll.m').read_text()
+        install=src.split('void WCKInstallReadAll(void)',1)[1]
+        center=src.split('static id WCKServiceCenter(void)',1)[1].split('static id WCKService(',1)[0]
+        self.assertIn('Class center = WCKReadContextEntry(&entry);',install)
+        self.assertIn('WCKMethodMatches(object_getClass(center), entry,',install)
+        self.assertIn('Class cls = WCKReadContextEntry(&selector);',center)
+        self.assertNotIn('objc_msgSend',install)
+        self.assertIn('NSSelectorFromString(@"currentContext")',src)
     def test_no_phony_unimplemented(self):
         src=(root/'src/WCKVerifiedFeatures.m').read_text()
         self.assertIn('WCKInstallReadAll()',src)
