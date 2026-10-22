@@ -42,6 +42,11 @@ class SettingsContract(unittest.TestCase):
         self.assertIn("readDataUpToLength:WCKMaximumFileBytes + 1", self.m)
         self.assertIn("NSPropertyListImmutable", self.m)
         self.assertIn("CFBooleanGetTypeID()", self.m)
+        # Switch keys must still reject a plain number, and only the alpha key
+        # may take a non-boolean number. A reversed condition broke every
+        # switch write once; keep the polarity explicit.
+        self.assertIn("BOOL isBoolean = CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()", self.m)
+        self.assertIn("if (!isBoolean) return nil;", self.m)
         self.assertIn("WCKMaximumCSVLength", self.m)
         self.assertIn("WCKMaximumFormatLength", self.m)
         self.assertIn("controlCharacterSet", self.m)

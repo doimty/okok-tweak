@@ -51,15 +51,16 @@ static id WCKValidatedValue(NSString *key, id value) {
         return [canonical copy];
     }
     if ([defaultValue isKindOfClass:NSNumber.class]) {
-        if (![value isKindOfClass:NSNumber.class] ||
-            CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) {
-            // Only the alpha key is numeric; everything else is a switch.
-            if (![key isEqualToString:@"svgRandomAlpha"] || ![value isKindOfClass:NSNumber.class] ||
-                CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) return nil;
+        if (![value isKindOfClass:NSNumber.class]) return nil;
+        BOOL isBoolean = CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+        // Only the alpha key is numeric; every other number key is a switch.
+        if ([key isEqualToString:@"svgRandomAlpha"]) {
+            if (isBoolean) return nil;
             double alpha = [value doubleValue];
             if (!isfinite(alpha)) return nil;
             return @(MIN(1.0, MAX(0.2, alpha)));
         }
+        if (!isBoolean) return nil;
         return @([value boolValue]);
     }
     if (![value isKindOfClass:NSString.class]) return nil;
