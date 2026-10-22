@@ -2,6 +2,7 @@
 #import "WCKSettings.h"
 #import "WCKRuntime.h"
 #import "WCKSVGColorViewController.h"
+#import "WCKFeatureDetailViewController.h"
 #import "WCKSVGPalette.h"
 
 static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
@@ -192,25 +193,30 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     cell.accessibilityIdentifier = nil;
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    if (path.section < 2) {
-        NSDictionary *row = path.section == 1 ? WCKModuleRows()[path.row] : nil;
-        NSString *key = path.section == 0 ? @"enabled" : row[@"key"];
-        cell.textLabel.text = path.section == 0 ? @"启用 WeChatKit" : row[@"title"];
-        cell.detailTextLabel.text = path.section == 0 ?
-            (self.hostSupported ? @"仅已就绪模块可生效；各项仍需分别开启。" : @"当前宿主不支持；已存总开关仍可关闭。") :
-            [self statusForRow:row];
-        if (key) {
-            BOOL stored = [self.settings boolForKey:key];
-            BOOL canEnable = self.hostSupported && (path.section == 0 || [self isReady:row[@"id"]]);
-            UISwitch *toggle = [[UISwitch alloc] init];
-            toggle.on = stored;
-            toggle.enabled = canEnable || stored;
-            toggle.tag = path.section == 0 ? 0 : path.row + 1;
-            toggle.accessibilityIdentifier = [@"wck.switch." stringByAppendingString:key];
-            toggle.accessibilityLabel = cell.textLabel.text;
-            toggle.accessibilityHint = cell.detailTextLabel.text;
-            [toggle addTarget:self action:@selector(toggleChanged:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = toggle;
+    if (path.section == 0) {
+        BOOL stored = [self.settings boolForKey:@"enabled"];
+        cell.textLabel.text = @"启用 WeChatKit";
+        cell.detailTextLabel.text = self.hostSupported ?
+            @"仅已就绪模块可生效；各项仍需分别开启。" : @"当前宿主不支持；已存总开关仍可关闭。";
+        UISwitch *toggle = [[UISwitch alloc] init];
+        toggle.on = stored;
+        toggle.enabled = self.hostSupported || stored;
+        toggle.tag = 0;
+        toggle.accessibilityIdentifier = @"wck.switch.enabled";
+        toggle.accessibilityLabel = cell.textLabel.text;
+        toggle.accessibilityHint = cell.detailTextLabel.text;
+        [toggle addTarget:self action:@selector(toggleChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = toggle;
+    } else if (path.section == 1) {
+        // Each implemented feature is an entry: its switch and values live on
+        // the second-level page, never twice on this list.
+        NSDictionary<NSString *, NSString *> *row = WCKModuleRows()[path.row];
+        cell.textLabel.text = row[@"title"];
+        cell.detailTextLabel.text = [self statusForRow:row];
+        if (row[@"key"]) {
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+            cell.accessibilityIdentifier = [@"wck.feature." stringByAppendingString:row[@"id"]];
         }
     } else if (path.section == 2) {
         cell.textLabel.text = @"配色与图标名单";
@@ -285,8 +291,40 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
                  : @"随机调色盘 · 默认色板";
 }
 
+- (NSString *)detailForFeatureID:(NSString *)featureID {
+    if ([featureID isEqualToString:@"keyboardSwipe"])
+        return @"在聊天消息列表滑到最底部后继续上滑，即可展开键盘。只在这个位置生效，不影响列表正常浏览。";
+    if ([featureID isEqualToString:@"readAll"])
+        return @"长按底部第一个标签，把当前账号的未读会话标为已读。分批处理，逐条回读确认，可中途取消。";
+    if ([featureID isEqualToString:@"momentsTime"])
+        return @"调整朋友圈列表时间的显示格式，不影响消息与聊天记录。";
+    if ([featureID isEqualToString:@"albumSheet"])
+        return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
+    return @"";
+}
+
+- (UIViewController *)detailPageForFeature:(NSDictionary<NSString *, NSString *> *)row {
+    NSString *featureID = row[@"id"];
+    if ([featureID isEqualToString:@"svgTint"])
+        return [[WCKSVGColorViewController alloc] initWithSettings:self.settings];
+    NSArray<NSDictionary<NSString *, NSString *> *> *extra = nil;
+    if ([featureID isEqualToString:@"momentsTime"]) {
+        extra = @[@{@"key": @"momentsFormat", @"title": @"时间格式",
+                    @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
+    }
+    return [[WCKFeatureDetailViewController alloc] initWithSettings:self.settings
+        featureID:featureID settingsKey:row[@"key"] title:row[@"title"]
+        detail:[self detailForFeatureID:featureID] extraRows:extra];
+}
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
+    if (path.section == 1) {
+        NSDictionary<NSString *, NSString *> *row = WCKModuleRows()[path.row];
+        if (!row[@"key"] || !self.navigationController) return;
+        [self.navigationController pushViewController:[self detailPageForFeature:row] animated:YES];
+        return;
+    }
     if (path.section == 2) {
         if (![self canEnableKey:@"svgTint"]) { [self refreshState]; return; }
         WCKSVGColorViewController *page = [[WCKSVGColorViewController alloc] initWithSettings:self.settings];

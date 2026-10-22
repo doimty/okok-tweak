@@ -121,23 +121,24 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
 
 #pragma mark - Table
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 1;
-    if (section == 1) return [self usesFixed] ? 2 : 0;
-    if (section == 2) return [self usesFixed] ? 0 : 3;   // palette, alpha, reset
+    if (section <= 1) return 1;                          // switch, mode
+    if (section == 2) return [self usesFixed] ? 2 : 0;   // light, dark
+    if (section == 3) return [self usesFixed] ? 0 : 3;   // palette, alpha, reset
     return 2;                                            // include, exclude
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @[@"配色方式", @"固定颜色", @"随机色板", @"图标名单"][section];
+    return @[@"开关", @"配色方式", @"固定颜色", @"随机色板", @"图标名单"][section];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    if (section == 0) return @"固定颜色：浅色与深色各一色。随机色板：按图标名固定取色，同一图标不会每次变化。";
-    if (section == 2) return @"色板顺序决定取色，同一图标始终落在同一格。透明度不低于 20%，避免图标不可见。";
-    if (section == 3) return @"留空为全局改色。填写后仅作用名单内图标；排除优先，逗号分隔，最多 2048 字符。";
+    if (section == 0) return @"总开关关闭时，本页任何配色都不会生效。";
+    if (section == 1) return @"固定颜色：浅色与深色各一色。随机色板：按图标名固定取色，同一图标不会每次变化。";
+    if (section == 3) return @"色板顺序决定取色，同一图标始终落在同一格。透明度不低于 20%，避免图标不可见。";
+    if (section == 4) return @"留空为全局改色。填写后仅作用名单内图标；排除优先，逗号分隔，最多 2048 字符。";
     return nil;
 }
 
@@ -151,6 +152,15 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
     if (path.section == 0) {
+        BOOL stored = [self.settings boolForKey:@"svgTint"];
+        UISwitch *toggle = [UISwitch new];
+        toggle.on = stored;
+        toggle.accessibilityIdentifier = @"wck.svg.switch";
+        [toggle addTarget:self action:@selector(featureToggled:) forControlEvents:UIControlEventValueChanged];
+        cell.textLabel.text = @"Svg 图标改色";
+        cell.detailTextLabel.text = stored ? @"已开启" : @"已关闭";
+        cell.accessoryView = toggle;
+    } else if (path.section == 1) {
         UISegmentedControl *segments = [[UISegmentedControl alloc]
             initWithItems:@[@"固定颜色", @"随机色板"]];
         segments.selectedSegmentIndex = [self usesFixed] ? 0 : 1;
@@ -158,7 +168,7 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
         [segments addTarget:self action:@selector(modeChanged:) forControlEvents:UIControlEventValueChanged];
         cell.textLabel.text = @"方式";
         cell.accessoryView = segments;
-    } else if (path.section == 1) {
+    } else if (path.section == 2) {
         BOOL dark = path.row == 1;
         NSString *hex = [self.settings stringForKey:dark ? kDark : kLight defaultValue:@""];
         cell.textLabel.text = dark ? @"深色图标颜色" : @"浅色图标颜色";
@@ -167,7 +177,7 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessibilityIdentifier = dark ? @"wck.svg.dark" : @"wck.svg.light";
-    } else if (path.section == 2) {
+    } else if (path.section == 3) {
         if (path.row == 0) {
             NSArray<NSString *> *palette = [self palette];
             cell.textLabel.text = @"调色盘";
@@ -208,18 +218,23 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if (path.section == 1) {
+    if (path.section == 2) {
         [self pickColourForDark:path.row == 1];
-    } else if (path.section == 2 && path.row == 0) {
+    } else if (path.section == 3 && path.row == 0) {
         [self openPaletteEditor];
-    } else if (path.section == 2 && path.row == 2) {
+    } else if (path.section == 3 && path.row == 2) {
         [self confirmResetPalette];
-    } else if (path.section == 3) {
+    } else if (path.section == 4) {
         [self editListAtRow:path.row];
     }
 }
 
 #pragma mark - Actions
+
+- (void)featureToggled:(UISwitch *)sender {
+    if (![self save:@(sender.isOn) forKey:@"svgTint"]) { [self reload]; return; }
+    [self reload];
+}
 
 - (void)modeChanged:(UISegmentedControl *)sender {
     BOOL fixed = sender.selectedSegmentIndex == 0;
@@ -237,7 +252,7 @@ static UIColor *WCKColorFromHex(NSString *hex, UIColor *fallback) {
 - (void)alphaChanged:(UISlider *)sender {
     // Live feedback without a write per pixel of travel.
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:
-        [NSIndexPath indexPathForRow:1 inSection:2]];
+        [NSIndexPath indexPathForRow:1 inSection:3]];
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", sender.value * 100];
 }
 

@@ -81,7 +81,13 @@ class SettingsContract(unittest.TestCase):
         self.assertIn("WCKRuntimeStatuses()", self.vm)
         self.assertIn("WCKHostIsSupported()", self.vm)
         self.assertIn('isEqualToString:@"ready"', self.vm)
-        self.assertIn("toggle.enabled = canEnable || stored;", self.vm)
+        # Only the master switch lives on the list; feature switches moved to
+        # their second-level pages.
+        self.assertIn("toggle.enabled = self.hostSupported || stored;", self.vm)
+        self.assertNotIn('@"wck.switch." stringByAppendingString:key', self.vm)
+        detail = (ROOT / "src/WCKFeatureDetailViewController.m").read_text()
+        self.assertIn("toggle.enabled = ready || stored;", detail)
+        self.assertIn("wck.feature.switch.", detail)
         self.assertIn("sender.isOn && !canEnable", self.vm)
         # The colour details moved to the second-level page; the first page only
         # promises a fixed colour or a palette and keeps the list warning reachable.

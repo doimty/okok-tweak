@@ -35,6 +35,15 @@ class SVGColorUIContract(unittest.TestCase):
   self.assertNotIn('UINavigationBar.appearance',ui)
   self.assertNotIn('UIAppearance',ui)
 
+ def test_feature_switch_lives_on_second_level(self):
+  # The colour page owns its own switch; the first level only lists entries.
+  self.assertIn('wck.svg.switch',ui)
+  self.assertIn('[self save:@(sender.isOn) forKey:@"svgTint"]',ui)
+  self.assertIn('return @[@"开关", @"配色方式", @"固定颜色", @"随机色板", @"图标名单"][section];',ui)
+  detail=(root/'src/WCKFeatureDetailViewController.m').read_text()
+  for s in ['wck.feature.switch.','hostSupportsFeature','self.toggle = toggle']:
+   self.assertIn(s,detail)
+
  def test_settings_page_has_single_entry(self):
   self.assertIn("cell.textLabel.text = @\"配色与图标名单\"",settings_page)
   self.assertIn('WCKSVGColorViewController alloc] initWithSettings:self.settings',settings_page)
