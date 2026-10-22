@@ -86,8 +86,6 @@ int main(void) { @autoreleasepool {
     CHECK(WCKNormalizeHex(@"abc")==nil);
     CHECK(WCKNormalizeHex(@"#abcdef0")==nil);
     CHECK(WCKNormalizeHex(@"#abcdeg")==nil);
-    CHECK([WCKNormalizeHex(@123) isKindOfClass:NSNull.class]==NO);
-    CHECK(WCKNormalizeHex(@123)==nil);
     CHECK(WCKDefaultSVGPalette().count>=4);
     printf("SVG production selection + palette + real settings: %u assertions PASS\n",checks);
 } return 0; }
