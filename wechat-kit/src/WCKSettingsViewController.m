@@ -266,7 +266,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     NSString *featureID = row[@"id"];
     if ([featureID isEqualToString:@"svgTint"])
         return [[WCKSVGColorViewController alloc] initWithSettings:self.settings];
-    NSArray<NSDictionary<NSString *, NSString *> *> *extra = nil;
+    NSArray<NSDictionary<NSString *, id> *> *extra = nil;
     if ([featureID isEqualToString:@"momentsTime"]) {
         extra = @[@{@"key": @"momentsFormat", @"title": @"时间格式",
                     @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
