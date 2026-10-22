@@ -12,7 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
                       settingsKey:(NSString *)key
                            title:(NSString *)title
                           detail:(NSString *)detail
-                     extraRows:(nullable NSArray<NSDictionary<NSString *, NSString *> *> *)extraRows;
+                     extraRows:(nullable NSArray<NSDictionary<NSString *, id> *> *)extraRows;
 @end
 
 NS_ASSUME_NONNULL_END

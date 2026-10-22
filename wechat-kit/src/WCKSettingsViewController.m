@@ -15,7 +15,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
             @{@"id": @"friendRank", @"title": @"群内好友时间榜"},
             @{@"id": @"readAll", @"title": @"底栏微信长按一键已读", @"key": @"readAll"},
             @{@"id": @"cleanUI", @"title": @"界面净化"},
-            @{@"id": @"corners", @"title": @"全局圆角"},
+            @{@"id": @"corners", @"title": @"全局圆角", @"key": @"corners"},
             @{@"id": @"momentsTime", @"title": @"朋友圈详细时间", @"key": @"momentsTime"},
             @{@"id": @"albumSheet", @"title": @"聊天页半屏相册", @"key": @"albumSheet"},
             @{@"id": @"noHotUpdate", @"title": @"禁止热更新"},
@@ -257,6 +257,8 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
         return @"调整朋友圈列表时间的显示格式，不影响消息与聊天记录。";
     if ([featureID isEqualToString:@"albumSheet"])
         return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
+    if ([featureID isEqualToString:@"corners"])
+        return @"给列表卡片或带背景色的视图加圆角。列表范围最稳；全部范围会遍历视图，可能在长列表里增加一点开销。图片、文字、键盘与滚动容器不处理。";
     return @"";
 }
 
@@ -268,6 +270,14 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     if ([featureID isEqualToString:@"momentsTime"]) {
         extra = @[@{@"key": @"momentsFormat", @"title": @"时间格式",
                     @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
+    } else if ([featureID isEqualToString:@"corners"]) {
+        extra = @[
+            @{@"type": @"slider", @"key": @"cornersRadius", @"title": @"圆角半径",
+              @"min": @0, @"max": @24, @"help": @"0 表示不圆角，最大 24。"},
+            @{@"type": @"choice", @"key": @"cornersScope", @"title": @"作用范围",
+              @"items": @[@{@"value": @"list", @"title": @"列表卡片（推荐）"},
+                          @{@"value": @"all", @"title": @"所有带背景色的视图"}]}
+        ];
     }
     return [[WCKFeatureDetailViewController alloc] initWithSettings:self.settings
         featureID:featureID settingsKey:row[@"key"] title:row[@"title"]

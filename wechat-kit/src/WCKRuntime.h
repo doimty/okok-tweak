@@ -19,4 +19,6 @@ FOUNDATION_EXPORT void WCKInstallReadAll(void);
 FOUNDATION_EXPORT void WCKInstallAlbumSheet(void);
 FOUNDATION_EXPORT void WCKInstallMomentsTime(void);
 FOUNDATION_EXPORT void WCKInstallVerifiedFeatures(void);
+FOUNDATION_EXPORT void WCKInstallCorners(void);
+FOUNDATION_EXPORT void WCKRefreshCorners(void);
 NS_ASSUME_NONNULL_END

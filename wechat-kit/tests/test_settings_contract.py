@@ -28,12 +28,15 @@ class SettingsContract(unittest.TestCase):
         self.assertEqual(keys, {"enabled", "keyboardSwipe", "svgTint", "momentsTime",
                                "albumSheet", "readAll", "svgTintLight", "svgTintDark",
                                "svgInclude", "svgExclude", "momentsFormat",
-                               "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha"})
+                               "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
+                               "cornersRadius", "cornersScope"})
         self.assertEqual(defaults.count("@NO"), 6)
         # Palette defaults to a usable non-empty set and fixed mode stays the default.
         self.assertIn('@"svgUseFixedColor": @YES', defaults)
         self.assertIn('@"svgPaletteHexes": WCKDefaultSVGPalette()', defaults)
         self.assertIn('@"svgRandomAlpha": @1.0', defaults)
+        self.assertIn('@"cornersRadius": @12.0', defaults)
+        self.assertIn('@"cornersScope": @"list"', defaults)
         self.assertEqual(defaults.count('@"#07C160"'), 2)
         self.assertIn('@"svgInclude": @""', defaults)
         self.assertIn('@"momentsFormat": @"yyyy-MM-dd HH:mm:ss"', defaults)

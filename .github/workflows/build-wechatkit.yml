@@ -43,6 +43,7 @@ jobs:
           python3 tests/test_host_identity_contract.py
           python3 tests/test_svg_contract.py
           python3 tests/test_svgcolor_contract.py
+          python3 tests/test_corners_contract.py
       - name: Native Foundation entry registration regression
         working-directory: wechat-kit
         run: |

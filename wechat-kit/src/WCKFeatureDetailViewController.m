@@ -6,7 +6,7 @@
 @property (nonatomic, copy) NSString *featureID;
 @property (nonatomic, copy) NSString *settingsKey;
 @property (nonatomic, copy) NSString *detailText;
-@property (nonatomic, copy) NSArray<NSDictionary<NSString *, NSString *> *> *extraRows;
+@property (nonatomic, copy) NSArray<NSDictionary<NSString *, id> *> *extraRows;
 @property (nonatomic, strong) UISwitch *toggle;
 @end
 
@@ -17,7 +17,7 @@
                       settingsKey:(NSString *)key
                            title:(NSString *)title
                           detail:(NSString *)detail
-                     extraRows:(NSArray<NSDictionary<NSString *, NSString *> *> *)extraRows {
+                     extraRows:(NSArray<NSDictionary<NSString *, id> *> *)extraRows {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
     if (self) {
         _settings = settings;
@@ -89,7 +89,7 @@
     return @"设置";
 }
 
-- (NSDictionary<NSString *, NSString *> *)extraRowAtRow:(NSInteger)row {
+- (NSDictionary<NSString *, id> *)extraRowAtRow:(NSInteger)row {
     return row >= 0 && row < (NSInteger)self.extraRows.count ? self.extraRows[(NSUInteger)row] : nil;
 }
 
@@ -123,16 +123,48 @@
         cell.textLabel.textColor = UIColor.secondaryLabelColor;
         cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     } else {
-        NSDictionary<NSString *, NSString *> *row = [self extraRowAtRow:path.row];
-        NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
+        NSDictionary<NSString *, id> *row = [self extraRowAtRow:path.row];
+        NSString *type = row[@"type"];
         cell.textLabel.text = row[@"title"];
         cell.textLabel.textColor = UIColor.labelColor;
         cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-        cell.detailTextLabel.text = value.length ? value : @"空";
         BOOL editable = [self hostSupportsFeature];
         cell.textLabel.enabled = editable;
-        cell.accessoryType = editable ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
-        cell.selectionStyle = editable ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+        if ([type isEqualToString:@"slider"]) {
+            double minimum = [row[@"min"] doubleValue], maximum = [row[@"max"] doubleValue];
+            id stored = self.settings.snapshot[row[@"key"]];
+            double value = [stored isKindOfClass:NSNumber.class] ? [stored doubleValue] : minimum;
+            UISlider *slider = [UISlider new];
+            slider.minimumValue = (float)minimum;
+            slider.maximumValue = (float)maximum;
+            slider.value = (float)MIN(maximum, MAX(minimum, value));
+            slider.enabled = editable;
+            slider.accessibilityIdentifier = [@"wck.feature.slider." stringByAppendingString:row[@"key"]];
+            [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
+            [slider addTarget:self action:@selector(sliderCommitted:) forControlEvents:
+                UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
+            [slider.widthAnchor constraintGreaterThanOrEqualToConstant:140].active = YES;
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", slider.value];
+        } else if ([type isEqualToString:@"choice"]) {
+            NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
+            NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
+            NSString *shown = value;
+            for (NSDictionary<NSString *, NSString *> *item in items)
+                if ([item[@"value"] isEqualToString:value]) { shown = item[@"title"]; break; }
+            cell.detailTextLabel.text = shown.length ? shown : @"未设置";
+            cell.accessoryType = editable ? UITableViewCellAccessoryDisclosureIndicator
+                                          : UITableViewCellAccessoryNone;
+            cell.selectionStyle = editable ? UITableViewCellSelectionStyleDefault
+                                           : UITableViewCellSelectionStyleNone;
+        } else {
+            NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
+            cell.detailTextLabel.text = value.length ? value : @"空";
+            cell.accessoryType = editable ? UITableViewCellAccessoryDisclosureIndicator
+                                          : UITableViewCellAccessoryNone;
+            cell.selectionStyle = editable ? UITableViewCellSelectionStyleDefault
+                                           : UITableViewCellSelectionStyleNone;
+        }
     }
     return cell;
 }
@@ -156,11 +188,57 @@
     [self.tableView reloadData];
 }
 
+- (void)sliderChanged:(UISlider *)sender {
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:
+        [NSIndexPath indexPathForRow:0 inSection:2]];
+    if (cell) cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", sender.value];
+}
+
+- (void)sliderCommitted:(UISlider *)sender {
+    NSDictionary<NSString *, id> *row = [self extraRowAtRow:0];
+    if (!row) return;
+    NSError *error = nil;
+    if (![self.settings setObject:@(round(sender.value)) forKey:row[@"key"] error:&error]) {
+        [self.tableView reloadData];
+        return;
+    }
+    [self.tableView reloadData];
+}
+
+- (void)presentChoiceForRow:(NSDictionary<NSString *, id> *)row {
+    NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
+    if (!items.count) return;
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:row[@"title"]
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary<NSString *, NSString *> *item in items) {
+        __weak typeof(self) weakSelf = self;
+        [sheet addAction:[UIAlertAction actionWithTitle:item[@"title"]
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                (void)action;
+                typeof(self) self = weakSelf;
+                if (!self) return;
+                NSError *error = nil;
+                [self.settings setObject:item[@"value"] forKey:row[@"key"] error:&error];
+                [self.tableView reloadData];
+            }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
+        CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
     if (path.section != 2) return;
-    NSDictionary<NSString *, NSString *> *row = [self extraRowAtRow:path.row];
+    NSDictionary<NSString *, id> *row = [self extraRowAtRow:path.row];
     if (!row || ![self hostSupportsFeature]) return;
+    if ([row[@"type"] isEqualToString:@"choice"]) {
+        [self presentChoiceForRow:row];
+        return;
+    }
+    if ([row[@"type"] isEqualToString:@"slider"]) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:row[@"title"]
         message:row[@"help"] preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {

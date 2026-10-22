@@ -21,6 +21,7 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
             @"svgInclude": @"", @"svgExclude": @"",
             @"svgUseFixedColor": @YES, @"svgPaletteHexes": WCKDefaultSVGPalette(),
             @"svgRandomAlpha": @1.0,
+            @"cornersRadius": @12.0, @"cornersScope": @"list",
             @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
         };
     });
@@ -60,6 +61,12 @@ static id WCKValidatedValue(NSString *key, id value) {
             if (!isfinite(alpha)) return nil;
             return @(MIN(1.0, MAX(0.2, alpha)));
         }
+        if ([key isEqualToString:@"cornersRadius"]) {
+            if (isBoolean) return nil;
+            double radius = [value doubleValue];
+            if (!isfinite(radius)) return nil;
+            return @(MIN(24.0, MAX(0.0, radius)));
+        }
         if (!isBoolean) return nil;
         return @([value boolValue]);
     }
@@ -81,6 +88,8 @@ static id WCKValidatedValue(NSString *key, id value) {
     }
     if ([key isEqualToString:@"momentsFormat"] &&
         [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length == 0) return nil;
+    if ([key isEqualToString:@"cornersScope"])
+        return ([text isEqualToString:@"list"] || [text isEqualToString:@"all"]) ? text : nil;
     return text;
 }
 
