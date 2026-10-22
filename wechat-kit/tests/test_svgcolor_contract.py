@@ -45,7 +45,9 @@ class SVGColorUIContract(unittest.TestCase):
    self.assertIn(s,detail)
 
  def test_settings_page_has_single_entry(self):
-  self.assertIn("cell.textLabel.text = @\"配色与图标名单\"",settings_page)
+  # The list carries one entry per feature; the colour page is reached from it.
+  self.assertNotIn('@"配色与图标名单"',settings_page)
+  self.assertIn('wck.feature.',settings_page)
   self.assertIn('WCKSVGColorViewController alloc] initWithSettings:self.settings',settings_page)
   # The four raw text rows must not remain on the first page.
   self.assertNotIn('@"浅色图标颜色"',settings_page)

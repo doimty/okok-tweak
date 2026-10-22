@@ -28,17 +28,6 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     return rows;
 }
 
-static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
-    static NSArray *rows;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        rows = @[
-            @{@"key": @"momentsFormat", @"module": @"momentsTime", @"title": @"时间格式", @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}
-        ];
-    });
-    return rows[0];
-}
-
 @interface WCKSettingsViewController ()
 @property (nonatomic, strong) WCKSettings *settings;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *statuses;
@@ -163,22 +152,20 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     return text;
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? 1 : (section == 1 ? WCKModuleRows().count : (section == 2 ? 1 : 1));
+    return section == 0 ? 1 : WCKModuleRows().count;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @[@"总开关", @"功能状态（13 项）", @"Svg 图标改色", @"朋友圈时间格式"][section];
+    return @[@"总开关", @"功能状态（13 项）"][section];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     return @[
         @"默认全部关闭。总开关关闭时所有功能均不生效。不保存账号或聊天内容。",
-        @"仅宿主支持且状态已就绪的项目可开启；未完成项保留说明。已存开关仍可关闭。",
-        @"进入后可选择固定颜色或随机调色盘，并设置图标名单。仅作用于微信 SVG，不修改照片或头像。",
-        @"功能已就绪且宿主支持时可编辑。默认 yyyy-MM-dd HH:mm:ss。"
+        @"点开任意已实现项目可进入它的设置页；未完成项保留说明，不提供入口。"
     ][section];
 }
 
@@ -218,24 +205,6 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
             cell.accessibilityIdentifier = [@"wck.feature." stringByAppendingString:row[@"id"]];
         }
-    } else if (path.section == 2) {
-        cell.textLabel.text = @"配色与图标名单";
-        cell.detailTextLabel.text = [self svgSummary];
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-        cell.accessibilityIdentifier = @"wck.svg.entry";
-    } else {
-        NSDictionary *row = WCKTextRow(path);
-        NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
-        BOOL editable = self.hostSupported && [self isReady:row[@"module"]];
-        cell.textLabel.text = row[@"title"];
-        cell.detailTextLabel.text = value.length ? value :
-            ([row[@"key"] isEqualToString:@"svgInclude"] ? @"全局 SVG（无名单限制）" : @"空");
-        cell.textLabel.enabled = editable;
-        cell.detailTextLabel.enabled = editable;
-        cell.accessoryType = editable ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
-        cell.selectionStyle = editable ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-        cell.accessibilityIdentifier = [@"wck.text." stringByAppendingString:row[@"key"]];
     }
     return cell;
 }
@@ -279,18 +248,6 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-- (NSString *)svgSummary {
-    id flag = self.settings.snapshot[@"svgUseFixedColor"];
-    BOOL fixed = ![flag isKindOfClass:NSNumber.class] || [flag boolValue];
-    NSString *light = WCKHexDisplay([self.settings stringForKey:@"svgTintLight" defaultValue:@""]);
-    NSString *dark = WCKHexDisplay([self.settings stringForKey:@"svgTintDark" defaultValue:@""]);
-    if (fixed) return [NSString stringWithFormat:@"固定颜色 · 浅 %@ · 深 %@", light, dark];
-    id stored = self.settings.snapshot[@"svgPaletteHexes"];
-    NSUInteger count = [stored isKindOfClass:NSArray.class] ? [(NSArray *)stored count] : 0;
-    return count ? [NSString stringWithFormat:@"随机调色盘 · %lu 色", (unsigned long)count]
-                 : @"随机调色盘 · 默认色板";
-}
-
 - (NSString *)detailForFeatureID:(NSString *)featureID {
     if ([featureID isEqualToString:@"keyboardSwipe"])
         return @"在聊天消息列表滑到最底部后继续上滑，即可展开键盘。只在这个位置生效，不影响列表正常浏览。";
@@ -319,51 +276,10 @@ static NSDictionary<NSString *, NSString *> *WCKTextRow(NSIndexPath *path) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if (path.section == 1) {
-        NSDictionary<NSString *, NSString *> *row = WCKModuleRows()[path.row];
-        if (!row[@"key"] || !self.navigationController) return;
-        [self.navigationController pushViewController:[self detailPageForFeature:row] animated:YES];
-        return;
-    }
-    if (path.section == 2) {
-        if (![self canEnableKey:@"svgTint"]) { [self refreshState]; return; }
-        WCKSVGColorViewController *page = [[WCKSVGColorViewController alloc] initWithSettings:self.settings];
-        [self.navigationController pushViewController:page animated:YES];
-        return;
-    }
-    if (path.section < 2) return;
-    NSDictionary *row = WCKTextRow(path);
-    if (![self canEnableKey:row[@"module"]]) {
-        [self refreshState];
-        return;
-    }
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:row[@"title"]
-        message:row[@"help"] preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.text = [self.settings stringForKey:row[@"key"] defaultValue:@""];
-        field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.spellCheckingType = UITextSpellCheckingTypeNo;
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        field.clearButtonMode = UITextFieldViewModeWhileEditing;
-        field.accessibilityIdentifier = [@"wck.input." stringByAppendingString:row[@"key"]];
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    __weak typeof(self) weakSelf = self;
-    __weak UIAlertController *weakAlert = alert;
-    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action;
-        typeof(self) self = weakSelf;
-        if (!self) return;
-        NSError *error = nil;
-        if (![self canEnableKey:row[@"module"]]) {
-            error = [NSError errorWithDomain:@"com.doimty.wechatkit.settings" code:5
-                userInfo:@{NSLocalizedDescriptionKey: @"当前宿主不支持或功能尚未就绪，不能编辑。"}];
-        } else {
-            [self.settings setObject:weakAlert.textFields.firstObject.text ?: @"" forKey:row[@"key"] error:&error];
-        }
-        if (error) [self showError:error];
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    if (path.section != 1) return;
+    NSDictionary<NSString *, NSString *> *row = WCKModuleRows()[path.row];
+    if (!row[@"key"] || !self.navigationController) return;
+    [self.navigationController pushViewController:[self detailPageForFeature:row] animated:YES];
 }
 
 - (void)showError:(NSError *)error {
