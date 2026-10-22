@@ -183,6 +183,9 @@ int main(int argc,const char **argv){@autoreleasepool{
  // Boundary cases: stop>=contentHeight-10, strictly > +0.15, 30ms delay.
  // The stop position decides, not the offset at the moment of release.
  scroll.contentOffset=(CGPoint){0,490};dragTo(vc,scroll,0.6,470);CHECK(keyboardBlocks.count==0);
+ // Exactly 15pt short: outside the 10pt tolerance but inside a 20pt one, so this
+ // case keeps the tolerance itself under test.
+ dragTo(vc,scroll,0.6,476);CHECK(keyboardBlocks.count==0);
  scroll.contentOffset=(CGPoint){0,490};drag(vc,scroll,0.15);CHECK(keyboardBlocks.count==0);
  drag(vc,scroll,-0.6);CHECK(keyboardBlocks.count==0);drag(vc,scroll,NAN);CHECK(keyboardBlocks.count==0);
  drag(vc,scroll,0.15001);CHECK(keyboardBlocks.count==1);drainKeyboard();CHECK(responderCalls==2);text.firstResponder=NO;
