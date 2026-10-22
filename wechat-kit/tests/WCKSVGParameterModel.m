@@ -9,11 +9,6 @@
 static unsigned checks,forbiddenImageOps,transforms,traitReads,setterAssignments;
 static void (^duringFactory)(void);
 static BOOL modeDependsOnColor;
-static __weak id latestSVGDriver;
-static IMP originalDriverNormalSetter;
-static void trackedDriverNormalSetter(id receiver,SEL cmd,id slot){
- latestSVGDriver=receiver;((void(*)(id,SEL,id))originalDriverNormalSetter)(receiver,cmd,slot);
-}
 #define CHECK(x) do { ++checks;if(!(x)){fprintf(stderr,"SVG PARAM CHECK failed %d: %s\n",__LINE__,#x);abort();} } while(0)
 static WCKSettings *store;
 @interface WCKSettings (ParameterStore)
@@ -190,7 +185,6 @@ static void initFixture(void){
  store=[[WCKSettings alloc]initWithFileURL:[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"settings/test.plist"]]];
  Method a=class_getClassMethod(WCKSettings.class,@selector(shared)),b=class_getClassMethod(WCKSettings.class,@selector(parameterShared));method_setImplementation(a,method_getImplementation(b));
  statuses=[NSMutableDictionary new];calls=[NSMutableArray new];cache=[NSMutableDictionary new];originalColor=[UIColor new];originalColor.rgb=0x223344;
- const char*driverArgs[]={"@"};CHECK(WCKInstallHook(NSClassFromString(@"WCKSVGDriver"),NSSelectorFromString(@"setNormal:"),(IMP)trackedDriverNormalSetter,&originalDriverNormalSetter,"v",driverArgs,1));
  WCKInstallSVG();CHECK([statuses[@"svgTint"]isEqual:@"ready"]);
  setting(@"svgTintLight",@"#112233");setting(@"svgTintDark",@"#AABBCC");setting(@"enabled",@YES);setting(@"svgTint",@YES);
 }
@@ -307,45 +301,76 @@ static void subclassDispatch(void){
  subclassFactory=NO;
 }
 static void setterReentry(void){
- // Begin with a real production slot, then replace it during a new setter's
- // replay. A weak observer proves the old driver/slot association is cleared.
- @autoreleasepool{
-  UIImageView*w=[UIImageView new];w.image=vm(@"existing-slot");
-  __weak id oldDriver=latestSVGDriver;CHECK(oldDriver);
-  w.traitCollection.userInterfaceStyle=UIUserInterfaceStyleDark;
-  UIImage*plain=[UIImage new],*pending=vm(@"superseded-existing-slot");
-  unsigned assignmentsBefore=setterAssignments;
-  duringFactory=^{w.image=plain;};w.image=pending;
-  CHECK(w.image==plain);CHECK(setterAssignments==assignmentsBefore+1);CHECK(!oldDriver);
-  NSUInteger callsBefore=calls.count;setting(@"svgTintDark",@"#ABCDEF");
-  CHECK(w.image==plain);CHECK(calls.count==callsBefore);setting(@"svgTintDark",@"#AABBCC");
- }
- UIImageView*v=[UIImageView new];v.traitCollection.userInterfaceStyle=UIUserInterfaceStyleDark;
- UIImage*entry=[UIImage new],*replacement=[UIImage new];v.image=entry;
- UIImage*incoming=vm(@"reentry-new");unsigned before=setterAssignments;
- duringFactory=^{v.image=replacement;};v.image=incoming;
+ // WCKSVGRender only calls the factory when the selected colour differs from
+ // the stamp recorded for the incoming image. Each case therefore creates the
+ // incoming image under one tint and changes the tint before assigning it, so
+ // the reentrant host callback really runs inside the pending replay.
+ UIImageView*v=[UIImageView new];
+ v.traitCollection.userInterfaceStyle=UIUserInterfaceStyleDark;
+ setting(@"svgTintDark",@"#AABBCC");
+ UIImage*slotImage=vm(@"reentry-slot");v.image=slotImage;
+ CHECK(v.image.paintedRGB==0xAABBCC);
+ UIImage*replacement=[UIImage new];
+
+ // 1. The host replaces the image during replay: the newer value wins and the
+ //    pending assignment must not be written afterwards.
+ UIImage*incoming=vm(@"reentry-incoming");
+ setting(@"svgTintDark",@"#103050");
+ unsigned before=setterAssignments;
+ duringFactory=^{v.image=replacement;};
+ v.image=incoming;
  CHECK(v.image==replacement);CHECK(setterAssignments==before+1);
- // A -> B -> A must supersede the pending assignment despite equal pointers.
- v.image=entry;incoming=vm(@"reentry-aba");before=setterAssignments;
- duringFactory=^{v.image=replacement;v.image=entry;};v.image=incoming;
- CHECK(v.image==entry);CHECK(setterAssignments==before+2);
- setting(@"svgTint",@NO);CHECK(v.image==entry);setting(@"svgTint",@YES);CHECK(v.image==entry);
- // A nested setter on a different slot must not cancel this one.
- incoming=vm(@"reentry-other-slot");before=setterAssignments;
- duringFactory=^{v.highlightedImage=replacement;};v.image=incoming;
- CHECK(v.image.paintedRGB==0xAABBCC);CHECK(v.highlightedImage==replacement);CHECK(setterAssignments==before+1);
- // No reentry: the old current is normally different from the incoming value.
- v.image=entry;incoming=vm(@"ordinary-new-value");before=setterAssignments;v.image=incoming;
- CHECK(v.image.paintedRGB==0xAABBCC);CHECK(setterAssignments==before+1);
- // A throwing ancillary replay after replacement must still unwind its scope.
- incoming=vm(@"reentry-throw");before=setterAssignments;
+ // The replaced view must also stop being refreshed from the stale slot.
+ NSUInteger callsBefore=calls.count;
+ setting(@"svgTintDark",@"#223344");
+ CHECK(v.image==replacement);CHECK(calls.count==callsBefore);
+
+ // 2. A -> B -> A: equal pointers still count as a newer host assignment.
+ setting(@"svgTintDark",@"#AABBCC");
+ v.image=slotImage;CHECK(v.image.paintedRGB==0xAABBCC);
+ UIImage*aba=vm(@"reentry-aba");
+ setting(@"svgTintDark",@"#334455");
+ before=setterAssignments;
+ duringFactory=^{v.image=replacement;v.image=slotImage;};
+ v.image=aba;
+ CHECK(v.image==slotImage);CHECK(setterAssignments==before+2);
+ callsBefore=calls.count;setting(@"svgTintDark",@"#445566");
+ CHECK(v.image==slotImage);CHECK(calls.count==callsBefore);
+
+ // 3. A nested setter on another slot must not cancel this assignment.
+ setting(@"svgTintDark",@"#AABBCC");
+ v.image=slotImage;
+ UIImage*otherSlot=vm(@"reentry-other-slot");
+ setting(@"svgTintDark",@"#556677");
+ before=setterAssignments;
+ duringFactory=^{v.highlightedImage=replacement;};
+ v.image=otherSlot;
+ CHECK(v.image.paintedRGB==0x556677);CHECK(v.highlightedImage==replacement);
+ CHECK(setterAssignments==before+1);
+
+ // 4. A throwing replay must not leave the scope armed or override the host.
+ setting(@"svgTintDark",@"#AABBCC");
+ v.image=slotImage;
+ UIImage*throwing=vm(@"reentry-throw");
+ setting(@"svgTintDark",@"#667788");
+ before=setterAssignments;
  duringFactory=^{v.image=replacement;@throw [NSException exceptionWithName:@"ReentrantHost" reason:nil userInfo:nil];};
- v.image=incoming;CHECK(v.image==replacement);CHECK(setterAssignments==before+1);
- v.image=vm(@"after-reentry-throw");CHECK(v.image.paintedRGB==0xAABBCC);
+ v.image=throwing;
+ CHECK(v.image==replacement);CHECK(setterAssignments==before+1);CHECK(!duringFactory);
+ v.image=vm(@"after-reentry-throw");CHECK(v.image.paintedRGB==0x667788);
+
+ // 5. Button states are independent slots and must not cancel each other.
  UIButton*b=[UIButton new];b.traitCollection.userInterfaceStyle=UIUserInterfaceStyleDark;
- incoming=vm(@"reentry-button");duringFactory=^{[b setImage:replacement forState:7];};[b setImage:incoming forState:5];
- CHECK([b imageForState:5].paintedRGB==0xAABBCC);CHECK([b imageForState:7]==replacement);
+ setting(@"svgTintDark",@"#AABBCC");
+ UIImage*buttonSlot=vm(@"reentry-button-slot");[b setImage:buttonSlot forState:5];
+ UIImage*buttonIncoming=vm(@"reentry-button-incoming");
+ setting(@"svgTintDark",@"#778899");
+ duringFactory=^{[b setImage:replacement forState:7];};
+ [b setImage:buttonIncoming forState:5];
+ CHECK([b imageForState:5].paintedRGB==0x778899);
+ CHECK([b imageForState:7]==replacement);
  CHECK(!duringFactory);
+ setting(@"svgTintDark",@"#AABBCC");
 }
 static void failureAndThreads(void){
  throwFactory=YES;BOOL caught=NO;@try{(void)vm(@"throw");}@catch(NSException*e){caught=[e.name isEqual:@"HostFactory"];}CHECK(caught);throwFactory=NO;
