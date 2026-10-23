@@ -71,7 +71,7 @@ def main():
     row=report['results'][-1]
     if not a.object_only:
      for case in ([target] if target else CASES):
-      home=td/(name+'-'+case);home.mkdir();env=dict(os.environ,HOME=str(home))
+      home=td/('corners-'+name+'-'+case);home.mkdir();env=dict(os.environ,HOME=str(home))
       x=subprocess.run([str(exe),case],capture_output=True,text=True,timeout=30,env=env)
       good=(x.returncode==86 and marker in x.stderr) if marker else (x.returncode==0 and 'CORNERS CASE '+case+' PASS' in x.stdout)
       row['cases'].append({'case':case,'exit':x.returncode,'expected':good,'stdout':x.stdout,'stderr':x.stderr})
