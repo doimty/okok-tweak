@@ -124,10 +124,10 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
             if (layer.maskedCorners == saved.lastMask) layer.maskedCorners = saved.mask;
             if (WCKCornerObjectsEqual(layer.cornerCurve, saved.lastCurve)) layer.cornerCurve = saved.curve;
         }
-        if (saved.ownsBorder) {
-            if (layer.borderWidth == saved.lastWidth &&
-                WCKCornerColorsEqual(layer.borderColor, saved.lastColor.CGColor))
-                layer.borderColor = saved.color.CGColor;
+        if (saved.ownsBorder && layer.borderWidth == saved.lastWidth &&
+            WCKCornerColorsEqual(layer.borderColor, saved.lastColor.CGColor)) {
+            layer.borderWidth = saved.width;
+            layer.borderColor = saved.color.CGColor;
         }
     }
     [state.layers removeAllObjects];

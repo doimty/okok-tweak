@@ -72,6 +72,7 @@ class CornersContract(unittest.TestCase):
         for token in ['layer.cornerRadius == saved.lastRadius',
                       'layer.maskedCorners == saved.lastMask',
                       'layer.borderWidth == saved.lastWidth',
+                      'layer.borderWidth = saved.width',
                       'state.appliedFill', 'state.hostFill']:
             self.assertIn(token, restore)
         reuse = body('WCKCornerReuse')
