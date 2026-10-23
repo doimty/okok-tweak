@@ -23,8 +23,8 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
             @"svgRandomAlpha": @1.0,
             @"cornersRadius": @12.0,
             @"cornersMargin": @8.0, @"cornersSpacing": @8.0, @"cornersStrokeWidth": @0.0,
-            @"cornersHome": @YES, @"cornersContacts": @YES, @"cornersDiscover": @NO,
-            @"cornersMe": @NO, @"cornersProfile": @NO,
+            @"cornersHome": @YES, @"cornersContacts": @YES, @"cornersDiscover": @YES,
+            @"cornersMe": @YES, @"cornersProfile": @YES,
             @"cornersFill": @"", @"cornersStrokeColor": @"",
             @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
         };
