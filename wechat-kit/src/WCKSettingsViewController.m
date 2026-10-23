@@ -258,7 +258,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     if ([featureID isEqualToString:@"albumSheet"])
         return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
     if ([featureID isEqualToString:@"corners"])
-        return @"给列表卡片或带背景色的视图加圆角。列表范围最稳；全部范围会遍历视图，可能在长列表里增加一点开销。图片、文字、键盘与滚动容器不处理。";
+        return @"只处理会话、通讯录等已支持列表页的单元格。本体横向边距不改 contentView，按钮和宿主背景保持原样；分组间距仍待按 WCR 的分组判定链确认，当前不提供无效控件。关闭或复用时只恢复本模块仍拥有的样式。";
     return @"";
 }
 
@@ -272,17 +272,15 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
                     @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
     } else if ([featureID isEqualToString:@"corners"]) {
         extra = @[
-            @{@"type": @"slider", @"key": @"cornersRadius", @"title": @"圆角半径",
-              @"min": @0, @"max": @24, @"help": @"0 表示不圆角，最大 24。"},
+            @{ @"type": @"slider", @"key": @"cornersRadius", @"title": @"圆角半径",
+               @"min": @0, @"max": @24, @"help": @"0 表示不圆角，最大 24。" },
             @{@"type": @"slider", @"key": @"cornersMargin", @"title": @"卡片边距",
-              @"min": @0, @"max": @24, @"help": @"卡片左右与屏幕边缘的距离，列表范围生效。"},
-            @{@"type": @"slider", @"key": @"cornersSpacing", @"title": @"卡片间距",
-              @"min": @0, @"max": @24, @"help": @"相邻卡片之间的空隙，列表范围生效。"},
-            @{@"type": @"choice", @"key": @"cornersScope", @"title": @"作用范围",
-              @"items": @[@{@"value": @"list", @"title": @"列表卡片（推荐）"},
-                          @{@"value": @"all", @"title": @"所有带背景色的视图"}]},
+              @"min": @0, @"max": @30, @"help": @"单元格左右与列表边缘的距离（WCR 范围 0–30）；保留宿主已有的更大边距。"},
+            @{@"type": @"choice", @"key": @"cornersScope", @"title": @"作用页面",
+              @"items": @[@{@"value": @"list", @"title": @"会话与通讯录（推荐）"},
+                          @{@"value": @"all", @"title": @"全部已支持列表页"}]},
             @{@"key": @"cornersFill", @"title": @"卡片背景色",
-              @"help": @"留空不修改。仅列表范围生效，格式 #RRGGBB。"},
+              @"help": @"留空保留宿主原背景。仅作用于已支持列表页的单元格，格式 #RRGGBB。"},
             @{@"type": @"slider", @"key": @"cornersStrokeWidth", @"title": @"描边宽度",
               @"min": @0, @"max": @4, @"help": @"0 表示无描边。"},
             @{@"key": @"cornersStrokeColor", @"title": @"描边颜色",

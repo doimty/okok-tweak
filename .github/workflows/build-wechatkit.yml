@@ -70,6 +70,12 @@ jobs:
           ulimit -c 0
           python3 tests/run_behavior_native.py
           python3 tests/run_readall_native.py
+      - name: Native WCR-scoped corners geometry and restoration model
+        working-directory: wechat-kit
+        run: |
+          set -euo pipefail
+          ulimit -c 0
+          python3 tests/run_corners_native.py --output evidence/native-corners-tests.json
       - name: Install packaging dependencies
         run: |
           set -euo pipefail
@@ -126,4 +132,5 @@ jobs:
             wechat-kit/evidence/native-svg-model-tests.json
             wechat-kit/evidence/native-behavior-tests.json
             wechat-kit/evidence/native-readall-tests.json
+            wechat-kit/evidence/native-corners-tests.json
           if-no-files-found: warn

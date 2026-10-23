@@ -74,7 +74,8 @@ static id WCKValidatedValue(NSString *key, id value) {
             if (isBoolean) return nil;
             double number = [value doubleValue];
             if (!isfinite(number)) return nil;
-            double high = [key isEqualToString:@"cornersStrokeWidth"] ? 4.0 : 24.0;
+            double high = [key isEqualToString:@"cornersStrokeWidth"] ? 4.0 :
+                ([key isEqualToString:@"cornersMargin"] ? 30.0 : 24.0);
             return @(MIN(high, MAX(0.0, number)));
         }
         if (!isBoolean) return nil;

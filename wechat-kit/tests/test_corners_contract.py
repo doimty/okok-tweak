@@ -1,65 +1,138 @@
 #!/usr/bin/env python3
-"""Static contracts for global corner rounding. NOT UIKit execution."""
-import argparse,re,unittest
+"""Static contracts for WCR-scoped list-cell corners; not UIKit behavior tests."""
+import argparse
+import re
+import unittest
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--root',type=Path);a,rest=p.parse_known_args()
-root=(a.root or Path(__file__).resolve().parents[1])
-corners=(root/'src/WCKCorners.m').read_text()
-settings=(root/'src/WCKSettings.m').read_text()
-page=(root/'src/WCKSettingsViewController.m').read_text()
-detail=(root/'src/WCKFeatureDetailViewController.m').read_text()
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--root', type=Path)
+args, rest = parser.parse_known_args()
+root = args.root or Path(__file__).resolve().parents[1]
+source = (root / 'src/WCKCorners.m').read_text()
+settings = (root / 'src/WCKSettings.m').read_text()
+page = (root / 'src/WCKSettingsViewController.m').read_text()
+model = (root / 'tests/WCKCornersModel.m').read_text()
+detail = (root / 'src/WCKFeatureDetailViewController.m').read_text()
+
+
+def body(name):
+    match = re.search(r'\b' + re.escape(name) + r'\([^;]*?\)\s*\{', source)
+    if not match:
+        raise AssertionError('missing ' + name)
+    start = match.end()
+    depth = 1
+    for index in range(start, len(source)):
+        depth += (source[index] == '{') - (source[index] == '}')
+        if depth == 0:
+            return source[start:index]
+    raise AssertionError('unterminated ' + name)
+
 
 class CornersContract(unittest.TestCase):
- def test_installed_and_gated(self):
-  self.assertIn('void WCKInstallCorners(void)',corners)
-  self.assertIn('WCKEnabled(@"corners")',corners)
-  self.assertIn('WCKSetModuleStatus(@"corners"',corners)
-  self.assertIn('WCKInstallCorners();',(root/'src/WCKBootstrap.m').read_text())
+    def test_only_explicit_host_cell_hooks(self):
+        self.assertIn('NSClassFromString(@"MMTableViewCell")', source)
+        self.assertIn('NSClassFromString(@"NewMainFrameCell")', source)
+        for forbidden in ['WCKInstallHook(UIView.class', 'WCKInstallHook(UITableViewCell.class',
+                          'sOriginalSetBackgroundColor', 'WCKInstallHook(UIButton.class',
+                          'heightForHeaderInSection']:
+            self.assertNotIn(forbidden, source)
 
- def test_radius_is_bounded(self):
-  self.assertIn('MIN(24.0, MAX(0.0, radius))',corners)
-  self.assertIn('MIN(24.0, MAX(0.0, radius))',settings)
-  self.assertIn('@12.0',settings)
+    def test_supported_page_scope_is_fail_closed(self):
+        for name in ['NewMainFrameViewController', 'ContactsViewController',
+                     'FindFriendEntryViewController', 'MoreViewController',
+                     'ContactInfoViewController']:
+            self.assertIn('@"' + name + '"', source)
+        self.assertIn('return NSNotFound;', body('WCKCornerPage'))
+        self.assertIn('page != NSNotFound', body('WCKCornerPageEnabled'))
+        self.assertIn('全部已支持列表页', page)
 
- def test_scope_has_two_modes(self):
-  self.assertIn('isEqualToString:@"all"',corners)   # list is the default path
-  self.assertIn('@"cornersScope": @"list"',settings)
-  self.assertIn('cornersScope',settings)
-  self.assertIn('isEqualToString:@"all"',corners)
+    def test_horizontal_geometry_changes_only_cell_frame(self):
+        frame = body('WCKCornerFrame')
+        for token in ['CGRect bounds = table.bounds', 'convertRect:bounds toView:parent',
+                      'state.superview == parent', 'state.hostFrame', 'state.appliedFrame',
+                      'CGRectGetMinX(visible)', 'CGRectGetMaxX(visible)']:
+            self.assertIn(token, frame)
+        self.assertIn('state.superview == parent', frame)
+        self.assertIn('convertRect:state.appliedFrame toView:parent', frame)
+        self.assertIn('CGRectEqualToRect(incoming, appliedInParent)', frame)
+        self.assertNotIn('state.table == table && state.superview == parent', frame)
+        self.assertIn('state.superview convertRect:state.hostFrame toView:parent', frame)
+        self.assertNotIn('contentView.frame =', source)
+        self.assertNotIn('CGRectInset', source)
+        layout = body('WCKCornerLayout')
+        self.assertIn('original(cell, cmd);', layout)
+        self.assertIn('geometry.wrapper-coordinate-conversion', model)
+        self.assertIn('geometry.migration-no-double-inset', model)
+        self.assertIn('geometry.same-parent-table-change-restores-host', model)
+        self.assertIn('geometry.offset-parent-change-restores-host', model)
 
- def test_excludes_content_and_keyboard(self):
-  for name in ['UIImageView','UILabel','UIScrollView','UITableView','UIWindow','UIInputSetContainerView','UIVisualEffectView']:
-   self.assertIn(name,corners)
-  self.assertIn('WCKCornerClassExcluded',corners)
+    def test_disable_and_reuse_restore_only_owned_values(self):
+        restore = body('WCKCornerRestoreStyle')
+        for token in ['layer.cornerRadius == saved.lastRadius',
+                      'layer.maskedCorners == saved.lastMask',
+                      'layer.borderWidth == saved.lastWidth',
+                      'state.appliedFill', 'state.hostFill']:
+            self.assertIn(token, restore)
+        reuse = body('WCKCornerReuse')
+        for token in ['state.ownsFrame', 'state.hostFrame', 'state.appliedFrame',
+                      'CGRectEqualToRect(cell.frame, state.appliedFrame)',
+                      'original(cell, cmd);']:
+            self.assertIn(token, reuse)
+        self.assertIn('convertRect:state.appliedFrame toView:cell.superview', reuse)
+        self.assertIn('reuse.detached-restores-host', model)
+        self.assertIn('reuse.table-change-restores-host', model)
+        self.assertIn('restore.reuse-drops-state', model)
 
- def test_only_clips_when_it_paints(self):
-  # masksToBounds must follow an actual background, not be forced on every view.
-  self.assertIn('layer.masksToBounds = WCKPaintsBackground(view);',corners)
-  self.assertNotIn('masksToBounds = YES',corners.replace('layer.masksToBounds = NO',''))
+    def test_row_masks_and_spacing_scope_not_overclaimed(self):
+        layout = body('WCKCornerLayout')
+        self.assertIn('(path.row == 0 ? 3 : 0)', layout)
+        self.assertIn('(path.row == rows - 1 ? 12 : 0)', layout)
+        self.assertNotIn('heightForHeaderInSection', source)
+        self.assertNotIn('cornersSpacingUnified', settings)
+        self.assertNotIn('cornersPinnedTopSpacing', settings)
+        self.assertNotIn('置顶会话顶部间距', page)
+        self.assertIn('([key isEqualToString:@"cornersMargin"] ? 30.0 : 24.0)', settings)
+        # Legacy cornersSpacing is retained in the schema for compatibility,
+        # but no slider claims it affects layout until the WCR group rule lands.
+        self.assertIn('@"cornersSpacing": @6.0', settings)
+        self.assertNotIn('cornersSpacing', page)
 
- def test_refresh_is_bounded(self):
-  self.assertIn('visited < 4000',corners)
-  self.assertIn('WCKRefreshCorners',corners)
-  self.assertIn('WCKSettingsDidChangeNotification',corners)
+    def test_host_clipping_and_button_background_are_untouched(self):
+        self.assertNotRegex(source, r'\.masksToBounds\s*=')
+        self.assertIn('layer.borderColor = border.CGColor', source)
+        self.assertNotIn('WCKInstallHook(UIButton.class', source)
+        self.assertIn('restore.border-applied', model)
 
- def test_card_layout_parameters(self):
-  for key in ['cornersMargin','cornersSpacing','cornersStrokeWidth','cornersFill','cornersStrokeColor']:
-   self.assertIn(key,(root/'src/WCKSettings.m').read_text())
-   self.assertIn(key,page)
-  self.assertIn('WCKApplyCardLayout',corners)
-  self.assertIn('CGRectInset(bounds, margin, spacing / 2.0)',corners)
-  self.assertIn('WCKInstallHook(UITableViewCell.class, @selector(layoutSubviews)',corners)
-  # Every slider must carry its row, otherwise it writes the first row.
-  self.assertIn('slider.tag = path.row;',detail)
-  self.assertIn('extraRowAtRow:sender.tag',detail)
+    def test_per_cell_reentrancy_and_hook_abi_model(self):
+        self.assertIn('sCornerLayoutDepth && sCornerLayoutCell == cell', body('WCKCornerLayout'))
+        self.assertIn('sCornerFrameDepth && sCornerFrameCell == cell', body('WCKCornerSetFrame'))
+        self.assertIn('sCornerReuseDepth && sCornerReuseCell == cell', body('WCKCornerReuse'))
+        install = body('WCKInstallCorners')
+        for token in ['@encode(CGRect)', '@selector(setFrame:)', '@selector(layoutSubviews)',
+                      '@selector(prepareForReuse)']:
+            self.assertIn(token, install)
+        self.assertIn('abi.frame', model)
+        self.assertIn('hooks.allowed-target', model)
 
- def test_page_exposes_slider_and_choice(self):
-  self.assertIn('@"type": @"slider"',page)
-  self.assertIn('@"type": @"choice"',page)
-  self.assertIn('@"cornersRadius"',page)
-  self.assertIn('@"cornersScope"',page)
-  self.assertIn('@"key": @"corners"',page)
-  self.assertIn('- (void)sliderCommitted:(UISlider *)sender',detail)
-  self.assertIn('- (void)presentChoiceForRow:',detail)
+    def test_settings_keys_and_controls_match(self):
+        for key in ['corners', 'cornersRadius', 'cornersScope', 'cornersMargin',
+                    'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
+            self.assertIn('@"' + key + '"', settings)
+            self.assertIn('@"' + key + '"', page)
+        self.assertIn('slider.tag = path.row;', detail)
+        self.assertIn('extraRowAtRow:sender.tag', detail)
 
-if __name__=='__main__':unittest.main(argv=[__file__]+rest,verbosity=2)
+    def test_refresh_is_bounded_weak_and_cell_local(self):
+        refresh = body('WCKRefreshCorners')
+        self.assertIn('if (sCornerRefreshQueued) return;', refresh)
+        self.assertIn('WCKCornerRefreshLimit', refresh)
+        self.assertIn('NSHashTable weakObjectsHashTable', source)
+        self.assertIn('[cell setNeedsLayout]; [cell layoutIfNeeded];', refresh)
+        self.assertNotIn('beginUpdates', refresh)
+        self.assertNotIn('connectedScenes', source)
+        self.assertIn('refresh.registered', model)
+
+
+if __name__ == '__main__':
+    unittest.main(argv=[__file__] + rest, verbosity=2)
