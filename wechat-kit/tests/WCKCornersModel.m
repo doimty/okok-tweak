@@ -131,6 +131,15 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @implementation UIViewController
 - (instancetype)init { if ((self=[super init])) { _view=[UIView new]; _view.nextResponder=self; } return self; }
 @end
+// The shared fake UIKit header only declares these; a linked executable needs
+// real implementations or the macOS CI link step fails with undefined symbols.
+@implementation NewMainFrameViewController @end
+@implementation ContactsViewController @end
+@implementation FindFriendEntryViewController @end
+@implementation MoreViewController @end
+@implementation ContactInfoViewController @end
+@implementation WCKSettingsViewController @end
+@implementation WCKUnknownViewController @end
 @implementation MMTableViewCell @end
 @implementation MMMultiMenuTableViewCell @end
 @implementation NewMainFrameCell
