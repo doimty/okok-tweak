@@ -212,6 +212,9 @@ static WCKCornerScene *scene(Class controllerClass, NSInteger row, NSInteger sec
     s.cell=[controllerClass isSubclassOfClass:NewMainFrameViewController.class] ? [NewMainFrameCell new] : [MMTableViewCell new];
     s.cell.superview=s.table; s.cell.nextResponder=s.table; s.cell.window=s.window;
     [s.table.fixturePaths setObject:[NSIndexPath indexPathForRow:row inSection:section] forKey:s.cell];
+    // A freshly created cell has a zero frame; give every scene a realistic
+    // host frame so style-only checks exercise the real layout path.
+    s.cell.frame=CGRectMake(0,100,420,60);
     s.hostColor=rgb(.2,.3,.4); s.hostBorder=rgb(.4,.5,.6);
     s.cell.backgroundColor=s.hostColor;
     for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
@@ -378,20 +381,29 @@ static void isolation(void) {
         layout(s); rounded(s,allCorners);
     }
     // Fail-closed: missing window/index path/recognized parent and impossible geometry.
-    for (unsigned kind=0;kind<5;++kind) {
+    // A very narrow but otherwise valid table is NOT an invalid case: the module
+    // rounds it with a capped radius, so it is asserted separately below.
+    for (unsigned kind=0;kind<4;++kind) {
         WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
         CGRect r=CGRectMake(0,100,420,60);
         if (kind==0) s.cell.window=nil;
         if (kind==1) [s.table.fixturePaths removeObjectForKey:s.cell];
         if (kind==2) { s.cell.superview=nil; s.cell.nextResponder=nil; }
-        if (kind==3) { s.table.bounds=CGRectMake(0,0,20,900); r.size.width=20; }
-        if (kind==4) r.size.width=NAN;
+        if (kind==3) r.size.width=NAN;
         NSUInteger before=s.cell.fixtureFrameCalls; s.cell.frame=r;
         CHECK_ID("invalid.original-once",s.cell.fixtureFrameCalls==before+1);
-        if (kind==4) CHECK_ID("invalid.nan",isnan(s.cell.frame.size.width));
+        if (kind==3) CHECK_ID("invalid.nan",isnan(s.cell.frame.size.width));
         else CHECK_ID("invalid.geometry",sameRect(s.cell.frame,r));
         [s.cell layoutSubviews]; hostStyle(s,"invalid.style");
     }
+    // Geometry too narrow for the configured margin: keep the host frame and
+    // clamp the radius to half the shorter side instead of skipping rounding.
+    WCKCornerScene *narrow=scene(NewMainFrameViewController.class,0,0);
+    narrow.table.bounds=CGRectMake(0,0,20,900);
+    narrow.cell.frame=CGRectMake(0,100,20,60);
+    [narrow.cell layoutSubviews];
+    CHECK_ID("geometry.narrow-no-inset",sameRect(narrow.cell.frame,CGRectMake(0,100,20,60)));
+    CHECK_ID("geometry.narrow-radius-capped",near(narrow.cell.layer.cornerRadius,10));
 }
 
 static void restore(void) {
