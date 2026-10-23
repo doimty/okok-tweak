@@ -50,6 +50,9 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 - (void)dealloc { if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); }
 @end
 @implementation UIResponder @end
+@implementation UITraitCollection
+- (UIUserInterfaceStyle)userInterfaceStyle { return UIUserInterfaceStyleLight; }
+@end
 @interface UIView ()
 @property(nonatomic, strong) NSMutableArray<UIView *> *fixtureChildren;
 @end
@@ -75,6 +78,7 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
     }
     return origin;
 }
+- (UITraitCollection *)traitCollection { return [UITraitCollection new]; }
 - (CGRect)convertRect:(CGRect)rect toView:(UIView *)view {
     CGPoint from=[self fixtureOriginInWindow];
     CGPoint to=view ? [view fixtureOriginInWindow] : CGPointZero;
@@ -191,8 +195,10 @@ static void setting(NSString *key, id value) {
     CHECK_ID("settings.no-error",!error);
 }
 static void defaults(void) {
-    setting(@"enabled",@YES); setting(@"corners",@YES); setting(@"cornersScope",@"list");
-    setting(@"cornersMargin",@24); setting(@"cornersRadius",@12); setting(@"cornersSpacing",@6);
+    setting(@"enabled",@YES); setting(@"corners",@YES);
+    setting(@"cornersMargin",@24); setting(@"cornersRadius",@12); setting(@"cornersSpacing",@0);
+    setting(@"cornersHome",@YES); setting(@"cornersContacts",@YES);
+    setting(@"cornersDiscover",@NO); setting(@"cornersMe",@NO); setting(@"cornersProfile",@NO);
     setting(@"cornersFill",@""); setting(@"cornersStrokeWidth",@0); setting(@"cornersStrokeColor",@"");
 }
 
@@ -248,18 +254,20 @@ static void hostStyle(WCKCornerScene *s, const char *tag) {
     }
     CHECK_ID(tag,s.cell.backgroundColor==s.hostColor);
 }
-static void rounded(WCKCornerScene *s, CACornerMask mask) {
+static void rounded(WCKCornerScene *s) {
+    // Every row is a card: all four corners, not just the section's first/last.
     for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
-        CHECK_ID("rows.radius",near(l.cornerRadius,mask ? 12 : 0));
-        if (mask) CHECK_ID("rows.mask",l.maskedCorners==mask);
+        CHECK_ID("rows.radius",near(l.cornerRadius,12));
+        CHECK_ID("rows.mask",l.maskedCorners==allCorners);
         CHECK_ID("rows.curve",[l.cornerCurve isEqual:kCACornerCurveContinuous]);
         CHECK_ID("border.unconfigured",near(l.borderWidth,1) && sameColor(l.borderColor,s.hostBorder.CGColor));
     }
     CALayer *selected=s.cell.selectedBackgroundView.layer;
-    CHECK_ID("rows.selection-radius",near(selected.cornerRadius,mask ? 12 : 0));
-    CHECK_ID("rows.selection-mask",selected.maskedCorners==mask);
+    CHECK_ID("rows.selection-radius",near(selected.cornerRadius,12));
+    CHECK_ID("rows.selection-mask",selected.maskedCorners==allCorners);
     CHECK_ID("rows.selection-curve",[selected.cornerCurve isEqual:kCACornerCurveContinuous]);
-    CHECK_ID("fill.unconfigured",s.cell.backgroundColor==s.hostColor);
+    CHECK_ID("fill.default-card",sameColor(s.cell.backgroundColor.CGColor,rgb(1,1,1).CGColor) &&
+        sameColor(s.cell.backgroundView.backgroundColor.CGColor,rgb(1,1,1).CGColor));
 }
 static void geometry(void) {
     WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
@@ -267,18 +275,16 @@ static void geometry(void) {
     CHECK_ID("settings.margin-max-30",[WCKSettings.shared.snapshot[@"cornersMargin"] doubleValue]==30);
     setting(@"cornersMargin",@24);
     CGRect original=CGRectMake(0,100,420,60), inset=CGRectMake(24,100,372,60);
-    frame(s,original,inset,"geometry.frame"); layout(s); rounded(s,allCorners);
+    frame(s,original,inset,"geometry.frame"); layout(s); rounded(s);
     for (unsigned i=0;i<50;++i) { frame(s,s.cell.frame,inset,"geometry.no-accumulation"); layout(s); }
     setting(@"cornersMargin",@0);
     frame(s,s.cell.frame,original,"geometry.margin-zero-restores"); layout(s);
     setting(@"cornersMargin",@24);
     CGRect narrow=CGRectMake(40,100,340,60);
     frame(s,narrow,narrow,"geometry.host-narrow"); layout(s);
-    NSArray *masks=@[@(kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner),@0,
-        @(kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner)];
     for (NSInteger row=0;row<3;++row) {
         WCKCornerScene *r=scene(ContactsViewController.class,row,1);
-        frame(r,original,inset,"geometry.contacts"); layout(r); rounded(r,[masks[(NSUInteger)row] unsignedIntegerValue]);
+        frame(r,original,inset,"geometry.contacts"); layout(r); rounded(r);
     }
     // The UITableView may insert wrapper views. Its bounds and the cell frame
     // then have different coordinate origins; margin is measured after convert.
@@ -358,8 +364,9 @@ static void geometry(void) {
 }
 static void isolation(void) {
     NSArray *excluded=@[WCKSettingsViewController.class,WCKUnknownViewController.class];
-    for (NSString *scope in @[@"list",@"all"]) {
-        setting(@"cornersScope",scope);
+    for (NSString *key in @[@"cornersHome",@"cornersContacts",@"cornersDiscover",
+                            @"cornersMe",@"cornersProfile"]) setting(key,@YES);
+    {
         for (Class c in excluded) {
             WCKCornerScene *s=scene(c,0,0); CGRect r=CGRectMake(0,100,420,60);
             frame(s,r,r,"isolation.page-frame"); layout(s); hostStyle(s,"isolation.page-style");
@@ -373,12 +380,13 @@ static void isolation(void) {
     }
     NSArray *allOnly=@[FindFriendEntryViewController.class,MoreViewController.class,ContactInfoViewController.class];
     for (Class c in allOnly) {
-        WCKCornerScene *s=scene(c,0,0); setting(@"cornersScope",@"list");
-        frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.list-excludes");
-        layout(s); hostStyle(s,"scope.list-host");
-        setting(@"cornersScope",@"all");
-        frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.all-includes");
-        layout(s); rounded(s,allCorners);
+        WCKCornerScene *s=scene(c,0,0);
+        setting(@"cornersDiscover",@NO); setting(@"cornersMe",@NO); setting(@"cornersProfile",@NO);
+        frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.page-off");
+        layout(s); hostStyle(s,"scope.page-off-host");
+        setting(@"cornersDiscover",@YES); setting(@"cornersMe",@YES); setting(@"cornersProfile",@YES);
+        frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.page-on");
+        layout(s); rounded(s);
     }
     // Fail-closed: missing window/index path/recognized parent and impossible geometry.
     // A very narrow but otherwise valid table is NOT an invalid case: the module
@@ -404,6 +412,14 @@ static void isolation(void) {
     [narrow.cell layoutSubviews];
     CHECK_ID("geometry.narrow-no-inset",sameRect(narrow.cell.frame,CGRectMake(0,100,20,60)));
     CHECK_ID("geometry.narrow-radius-capped",near(narrow.cell.layer.cornerRadius,10));
+    // Vertical card spacing comes from the cell frame, so neighbours cannot
+    // share an edge and hide their rounded corners.
+    setting(@"cornersSpacing",@12);
+    WCKCornerScene *spaced=scene(NewMainFrameViewController.class,0,0);
+    frame(spaced,CGRectMake(0,100,420,60),CGRectMake(24,106,372,48),"geometry.spacing");
+    layout(spaced);
+    setting(@"cornersSpacing",@0);
+    frame(spaced,spaced.cell.frame,CGRectMake(24,100,372,60),"geometry.spacing-cleared");
 }
 
 static void restore(void) {
@@ -416,7 +432,7 @@ static void restore(void) {
         sameColor(s.cell.layer.borderColor,rgb(170/255.,187/255.,204/255.).CGColor));
     setting(@"cornersFill",@""); setting(@"cornersStrokeWidth",@0); setting(@"cornersStrokeColor",@"");
     layout(s);
-    CHECK_ID("restore.empty-fill",s.cell.backgroundColor==s.hostColor);
+    CHECK_ID("restore.default-fill",sameColor(s.cell.backgroundColor.CGColor,rgb(1,1,1).CGColor));
     CHECK_ID("restore.empty-border",near(s.cell.layer.borderWidth,1) && sameColor(s.cell.layer.borderColor,s.hostBorder.CGColor));
     setting(@"corners",@NO); layout(s); hostStyle(s,"restore.off");
     setting(@"corners",@YES); setting(@"cornersFill",@"#123456");
@@ -435,7 +451,7 @@ static void restore(void) {
     }
     CHECK_ID("restore.host-new-bg",s.cell.backgroundColor==newHost);
     defaults(); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
-    setting(@"cornersScope",@"all"); layout(s); rounded(s,allCorners);
+    setting(@"cornersMe",@YES); layout(s); rounded(s);
     // Same cell migrates to an excluded page, not a new cell.
     UIViewController *excluded=[WCKSettingsViewController new];
     s.table.nextResponder=excluded.view; s.table.superview=excluded.view;
@@ -454,7 +470,7 @@ static void restore(void) {
     WCKCornerScene *detached=scene(NewMainFrameViewController.class,0,0);
     CGRect original=CGRectMake(0,100,420,60), inset=CGRectMake(24,100,372,60);
     frame(detached,original,inset,"reuse.detached-initial"); layout(detached);
-    detached.cell.superview=nil; detached.cell.nextResponder=nil;
+    detached.cell.superview=nil; detached.cell.nextResponder=nil; detached.cell.window=nil;
     [detached.cell prepareForReuse];
     CHECK_ID("reuse.detached-restores-host",sameRect(detached.cell.frame,original));
     hostStyle(detached,"reuse.detached-style");
@@ -474,7 +490,7 @@ static void restore(void) {
     newTable.superview=moved.controller.view; newTable.nextResponder=moved.controller.view;
     newTable.window=moved.window; wrapper.superview=newTable; wrapper.nextResponder=newTable;
     [newTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:moved.cell];
-    moved.table=newTable;
+    moved.table=newTable; moved.cell.window=nil;
     [moved.cell prepareForReuse];
     CHECK_ID("reuse.table-change-restores-host",sameRect(moved.cell.frame,original));
 }
@@ -493,11 +509,14 @@ static void refresh(void) {
     drainRefresh();
     NSUInteger before=s.cell.fixtureLayoutCalls, needs=s.cell.fixtureNeedsLayoutCalls;
     setting(@"enabled",@YES); WCKRefreshCorners(); drainRefresh();
-    CHECK_ID("refresh.registered",s.cell.fixtureLayoutCalls==before+1 && s.cell.fixtureNeedsLayoutCalls==needs+1);
+    CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1 &&
+        s.cell.fixtureLayoutCalls==before);
+    layout(s);
     CHECK_ID("refresh.radius",near(s.cell.layer.cornerRadius,12));
     setting(@"cornersRadius",@18); before=s.cell.fixtureLayoutCalls; WCKRefreshCorners(); drainRefresh();
+    layout(s);
     CHECK_ID("refresh.parameters",s.cell.fixtureLayoutCalls==before+1 && near(s.cell.layer.cornerRadius,18));
-    setting(@"corners",@NO); WCKRefreshCorners(); drainRefresh(); hostStyle(s,"refresh.off-restored");
+    setting(@"corners",@NO); WCKRefreshCorners(); drainRefresh(); layout(s); hostStyle(s,"refresh.off-restored");
 }
 static void lifetime(void) {
     __weak UITableViewCell *weakCell=nil;

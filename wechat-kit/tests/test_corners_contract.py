@@ -43,9 +43,16 @@ class CornersContract(unittest.TestCase):
                      'FindFriendEntryViewController', 'MoreViewController',
                      'ContactInfoViewController']:
             self.assertIn('@"' + name + '"', source)
-        self.assertIn('return NSNotFound;', body('WCKCornerPage'))
-        self.assertIn('page != NSNotFound', body('WCKCornerPageEnabled'))
-        self.assertIn('全部已支持列表页', page)
+        # One switch per page, not one shared scope value.
+        for key in ['cornersHome', 'cornersContacts', 'cornersDiscover',
+                    'cornersMe', 'cornersProfile']:
+            self.assertIn('@"' + key + '"', source)
+            self.assertIn('@"' + key + '"', page)
+            self.assertIn('@"' + key + '"', settings)
+        enabled = body('WCKCornerPageEnabled')
+        self.assertIn('key != nil && [snapshot[key] boolValue]', enabled)
+        self.assertNotIn('cornersScope', source)
+        self.assertNotIn('cornersScope', page)
 
     def test_horizontal_geometry_changes_only_cell_frame(self):
         frame = body('WCKCornerFrame')
@@ -66,6 +73,10 @@ class CornersContract(unittest.TestCase):
         self.assertIn('geometry.migration-no-double-inset', model)
         self.assertIn('geometry.same-parent-table-change-restores-host', model)
         self.assertIn('geometry.offset-parent-change-restores-host', model)
+        self.assertIn('geometry.spacing', model)
+        frame_geometry = body('WCKCornerFrame')
+        self.assertIn('CGRectGetMinY(host) + spacing / 2.0', frame_geometry)
+        self.assertIn('desired.size.height = CGRectGetHeight(host) - spacing', frame_geometry)
 
     def test_disable_and_reuse_restore_only_owned_values(self):
         restore = body('WCKCornerRestoreStyle')
@@ -81,23 +92,26 @@ class CornersContract(unittest.TestCase):
                       'original(cell, cmd);']:
             self.assertIn(token, reuse)
         self.assertIn('convertRect:state.appliedFrame toView:cell.superview', reuse)
+        self.assertIn('cell.window == nil && state.ownsFrame', reuse)
         self.assertIn('reuse.detached-restores-host', model)
         self.assertIn('reuse.table-change-restores-host', model)
         self.assertIn('restore.reuse-drops-state', model)
 
     def test_row_masks_and_spacing_scope_not_overclaimed(self):
         layout = body('WCKCornerLayout')
-        self.assertIn('(path.row == 0 ? 3 : 0)', layout)
-        self.assertIn('(path.row == rows - 1 ? 12 : 0)', layout)
+        # Every row is its own card; row-index masks left middle rows square.
+        self.assertNotIn('path.row == 0', layout)
+        self.assertNotIn('path.row == rows - 1', layout)
+        self.assertIn('kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner', layout)
+        self.assertIn('if (radius <= 0) mask = 0;', layout)
         self.assertNotIn('heightForHeaderInSection', source)
         self.assertNotIn('cornersSpacingUnified', settings)
         self.assertNotIn('cornersPinnedTopSpacing', settings)
         self.assertNotIn('置顶会话顶部间距', page)
         self.assertIn('([key isEqualToString:@"cornersMargin"] ? 30.0 : 24.0)', settings)
-        # Legacy cornersSpacing is retained in the schema for compatibility,
-        # but no slider claims it affects layout until the WCR group rule lands.
-        self.assertIn('@"cornersSpacing": @6.0', settings)
-        self.assertNotIn('cornersSpacing', page)
+        # Spacing is a real card gap on the cell frame, not a fake header hook.
+        self.assertIn('@"cornersSpacing": @8.0', settings)
+        self.assertIn('cornersSpacing', page)
 
     def test_host_clipping_and_button_background_are_untouched(self):
         self.assertNotRegex(source, r'\.masksToBounds\s*=')
@@ -117,8 +131,9 @@ class CornersContract(unittest.TestCase):
         self.assertIn('hooks.allowed-target', model)
 
     def test_settings_keys_and_controls_match(self):
-        for key in ['corners', 'cornersRadius', 'cornersScope', 'cornersMargin',
-                    'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
+        for key in ['corners', 'cornersRadius', 'cornersMargin', 'cornersSpacing',
+                    'cornersHome', 'cornersContacts', 'cornersDiscover', 'cornersMe',
+                    'cornersProfile', 'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
             self.assertIn('@"' + key + '"', settings)
             self.assertIn('@"' + key + '"', page)
         self.assertIn('slider.tag = path.row;', detail)
@@ -129,7 +144,8 @@ class CornersContract(unittest.TestCase):
         self.assertIn('if (sCornerRefreshQueued) return;', refresh)
         self.assertIn('WCKCornerRefreshLimit', refresh)
         self.assertIn('NSHashTable weakObjectsHashTable', source)
-        self.assertIn('[cell setNeedsLayout]; [cell layoutIfNeeded];', refresh)
+        self.assertIn('[cell setNeedsLayout];', refresh)
+        self.assertNotIn('layoutIfNeeded', refresh)
         self.assertNotIn('beginUpdates', refresh)
         self.assertNotIn('connectedScenes', source)
         self.assertIn('refresh.registered', model)

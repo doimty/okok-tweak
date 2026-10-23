@@ -12,6 +12,13 @@ typedef NSString *CALayerCornerCurve;
 #define kCACornerCurveContinuous @"continuous"
 #define kCACornerCurveCircular @"circular"
 
+typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
+    UIUserInterfaceStyleUnspecified = 0, UIUserInterfaceStyleLight = 1, UIUserInterfaceStyleDark = 2
+};
+@interface UITraitCollection : NSObject
+@property(nonatomic, readonly) UIUserInterfaceStyle userInterfaceStyle;
+@end
+
 @interface UIColor : NSObject {
     CGColorRef _fixtureColor;
 }
@@ -51,6 +58,7 @@ typedef NSString *CALayerCornerCurve;
 @property(nonatomic) CGFloat alpha;
 @property(nonatomic, strong) CALayer *layer;
 @property(nonatomic, strong) UIColor *backgroundColor;
+@property(nonatomic, readonly) UITraitCollection *traitCollection;
 @property(nonatomic, readonly) NSArray<UIView *> *subviews;
 // These counters observe the original methods, not the replacement IMPs.
 @property(nonatomic) NSUInteger fixtureFrameCalls, fixtureLayoutCalls, fixtureReuseCalls;

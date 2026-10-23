@@ -30,8 +30,9 @@ static BOOL sCornerRefreshQueued;
 @property(nonatomic, weak) UITableView *table;
 @property(nonatomic, weak) UIView *superview;
 @property(nonatomic) CGRect hostFrame, appliedFrame;
-@property(nonatomic) BOOL ownsFrame, ownsFill;
+@property(nonatomic) BOOL ownsFrame, ownsFill, ownsViewFill;
 @property(nonatomic, strong) UIColor *hostFill, *appliedFill;
+@property(nonatomic, strong) UIColor *hostViewFill, *appliedViewFill;
 @property(nonatomic, strong) NSMutableArray<WCKCornerLayerState *> *layers;
 @end
 @implementation WCKCornerState @end
@@ -82,20 +83,34 @@ static UIViewController *WCKCornerOwner(UITableView *table) {
         if ([next isKindOfClass:UIViewController.class]) return (UIViewController *)next;
     return nil;
 }
-static NSInteger WCKCornerPage(UIViewController *owner) {
-    NSArray *names = @[@"NewMainFrameViewController", @"ContactsViewController",
-        @"FindFriendEntryViewController", @"MoreViewController", @"ContactInfoViewController"];
+static NSString *WCKCornerPageKey(UIViewController *owner) {
+    static NSArray<NSString *> *names, *keys;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = @[@"NewMainFrameViewController", @"ContactsViewController",
+                  @"FindFriendEntryViewController", @"MoreViewController",
+                  @"ContactInfoViewController"];
+        // One switch per page, matching WCR's separate per-page corner toggles.
+        keys = @[@"cornersHome", @"cornersContacts", @"cornersDiscover",
+                 @"cornersMe", @"cornersProfile"];
+    });
     for (NSUInteger i = 0; i < names.count; ++i) {
         Class cls = NSClassFromString(names[i]);
-        if (cls && [owner isKindOfClass:cls]) return (NSInteger)i;
+        if (cls && [owner isKindOfClass:cls]) return keys[i];
     }
-    return NSNotFound;
+    return nil;
 }
 static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot) {
-    NSInteger page = WCKCornerPage(owner);
-    // Keep stored list/all values, but all now means all supported list pages.
+    NSString *key = WCKCornerPageKey(owner);
     // Unknown pages and our own settings pages never become eligible.
-    return page != NSNotFound && (page < 2 || [snapshot[@"cornersScope"] isEqual:@"all"]);
+    return key != nil && [snapshot[key] boolValue];
+}
+static UIColor *WCKCornerDefaultFill(UITableView *table) {
+    BOOL dark = NO;
+    @try { dark = table.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark; }
+    @catch (__unused NSException *exception) { dark = NO; }
+    if (dark) return [UIColor colorWithRed:44 / 255.0 green:44 / 255.0 blue:46 / 255.0 alpha:1];
+    return UIColor.whiteColor;
 }
 static BOOL WCKCornerContext(UITableViewCell *cell, NSDictionary *snapshot,
                              UITableView **tableOut, NSIndexPath **pathOut, NSInteger *rowsOut) {
@@ -133,7 +148,11 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
     [state.layers removeAllObjects];
     if (state.ownsFill && WCKCornerObjectsEqual(cell.backgroundColor, state.appliedFill))
         cell.backgroundColor = state.hostFill;
+    if (state.ownsViewFill && cell.backgroundView &&
+        WCKCornerObjectsEqual(cell.backgroundView.backgroundColor, state.appliedViewFill))
+        cell.backgroundView.backgroundColor = state.hostViewFill;
     state.ownsFill = NO; state.hostFill = nil; state.appliedFill = nil;
+    state.ownsViewFill = NO; state.hostViewFill = nil; state.appliedViewFill = nil;
 }
 static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
                                  CGFloat width, UIColor *border, WCKCornerState *state) {
@@ -191,10 +210,17 @@ static CGRect WCKCornerFrame(UITableViewCell *cell, CGRect incoming, NSDictionar
     CGRect visible = [table convertRect:bounds toView:parent];
     if (!WCKCornerFiniteRect(visible)) { if (stateOut) *stateOut = state; return host; }
     CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"cornersMargin", 8, 30);
+    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"cornersSpacing", 8, 20);
     CGFloat left = MAX(CGRectGetMinX(host), CGRectGetMinX(visible) + margin);
     CGFloat right = MIN(CGRectGetMaxX(host), CGRectGetMaxX(visible) - margin);
     CGRect desired = host;
     if (margin > 0 && right - left > 1) { desired.origin.x = left; desired.size.width = right - left; }
+    // Vertical gap belongs to the cell frame too; otherwise neighbouring cards
+    // share an edge and their rounded corners disappear.
+    if (spacing > 0 && CGRectGetHeight(host) > spacing + 1) {
+        desired.origin.y = CGRectGetMinY(host) + spacing / 2.0;
+        desired.size.height = CGRectGetHeight(host) - spacing;
+    }
     if (!state && !CGRectEqualToRect(desired, host)) state = WCKCornerGetState(cell, YES);
     if (state) {
         state.hostFrame = host; state.appliedFrame = desired; state.table = table; state.superview = parent;
@@ -240,22 +266,30 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
         @try {
             if (!WCKEnabled(@"corners")) return;
             NSDictionary *snapshot = WCKSettings.shared.snapshot;
-            NSIndexPath *path = nil; NSInteger rows = 0;
-            if (!WCKCornerContext(cell, snapshot, NULL, &path, &rows) ||
+            UITableView *table = nil;
+            if (!WCKCornerContext(cell, snapshot, &table, NULL, NULL) ||
                 !WCKCornerFiniteRect(cell.bounds)) return;
             WCKCornerState *state = WCKCornerGetState(cell, YES);
-            NSUInteger mask = (path.row == 0 ? 3 : 0) | (path.row == rows - 1 ? 12 : 0);
-            CGFloat radius = mask ? (CGFloat)WCKCornerNumber(snapshot, @"cornersRadius", 12, 24) : 0;
+            // Every row is its own card; row-index masks left middle rows square.
+            CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"cornersRadius", 12, 24);
             radius = MIN(radius, MIN(cell.bounds.size.width, cell.bounds.size.height) / 2.0);
+            NSUInteger mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner |
+                kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
+            if (radius <= 0) mask = 0;
             CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"cornersStrokeWidth", 0, 4);
             UIColor *border = WCKCornerFill(snapshot, @"cornersStrokeColor");
             WCKCornerStyleLayer(cell.layer, radius, mask, width, border, state);
             WCKCornerStyleLayer(cell.backgroundView.layer, radius, mask, 0, nil, state);
             WCKCornerStyleLayer(cell.selectedBackgroundView.layer, radius, mask, 0, nil, state);
-            UIColor *fill = WCKCornerFill(snapshot, @"cornersFill");
-            if (fill) {
-                state.hostFill = cell.backgroundColor; state.appliedFill = fill; state.ownsFill = YES;
-                cell.backgroundColor = fill;
+            // An empty setting means the card colour this module supplies, not
+            // "leave the host transparent" - a transparent layer shows no corners.
+            UIColor *fill = WCKCornerFill(snapshot, @"cornersFill") ?: WCKCornerDefaultFill(table);
+            state.hostFill = cell.backgroundColor; state.appliedFill = fill; state.ownsFill = YES;
+            cell.backgroundColor = fill;
+            UIView *back = cell.backgroundView;
+            if (back) {
+                state.hostViewFill = back.backgroundColor; state.appliedViewFill = fill;
+                state.ownsViewFill = YES; back.backgroundColor = fill;
             }
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
@@ -273,7 +307,9 @@ static void WCKCornerReuse(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP orig
         @try {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
             WCKCornerRestoreStyle(cell, state);
-            if (state.ownsFrame) {
+            // Restore the frame only while the cell is offscreen; restoring a
+            // visible cell makes the card snap to full width and back.
+            if (cell.window == nil && state.ownsFrame) {
                 CGRect restoreFrame = state.hostFrame;
                 BOOL stillOwned = CGRectEqualToRect(cell.frame, state.appliedFrame);
                 if (state.superview != cell.superview && state.superview && cell.superview) {
@@ -322,7 +358,9 @@ void WCKRefreshCorners(void) {
             NSUInteger end = MIN(cells.count, WCKCornerRefreshLimit);
             for (NSUInteger i = 0; i < end; ++i) {
                 UITableViewCell *cell = cells[i];
-                [cell setNeedsLayout]; [cell layoutIfNeeded];
+                // No forced layout: the next natural pass applies the change
+                // without snapping visible cards.
+                [cell setNeedsLayout];
             }
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表刷新异常；保留宿主状态");

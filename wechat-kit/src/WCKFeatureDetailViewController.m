@@ -147,6 +147,14 @@
             [slider.widthAnchor constraintGreaterThanOrEqualToConstant:140].active = YES;
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", slider.value];
+        } else if ([type isEqualToString:@"switch"]) {
+            UISwitch *toggle = [UISwitch new];
+            toggle.on = [self.settings boolForKey:row[@"key"]];
+            toggle.enabled = editable;
+            toggle.tag = path.row;
+            toggle.accessibilityIdentifier = [@"wck.feature.option." stringByAppendingString:row[@"key"]];
+            [toggle addTarget:self action:@selector(optionSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
         } else if ([type isEqualToString:@"choice"]) {
             NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
             NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
@@ -187,6 +195,16 @@
         return;
     }
     [self.tableView reloadData];
+}
+
+- (void)optionSwitchChanged:(UISwitch *)sender {
+    NSDictionary<NSString *, id> *row = [self extraRowAtRow:sender.tag];
+    if (!row) return;
+    NSError *error = nil;
+    if (![self.settings setObject:@(sender.isOn) forKey:row[@"key"] error:&error]) {
+        [self.tableView reloadData];
+        return;
+    }
 }
 
 - (void)sliderChanged:(UISlider *)sender {
@@ -239,7 +257,8 @@
         [self presentChoiceForRow:row];
         return;
     }
-    if ([row[@"type"] isEqualToString:@"slider"]) return;
+    if ([row[@"type"] isEqualToString:@"slider"] ||
+        [row[@"type"] isEqualToString:@"switch"]) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:row[@"title"]
         message:row[@"help"] preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
