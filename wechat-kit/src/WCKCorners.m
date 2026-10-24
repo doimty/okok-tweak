@@ -84,27 +84,131 @@ static UIViewController *WCKCornerOwner(UITableView *table) {
     return nil;
 }
 static NSString *WCKCornerPageKey(UIViewController *owner) {
-    static NSArray<NSString *> *names, *keys;
+    static NSArray<NSString *> *names;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         names = @[@"NewMainFrameViewController", @"ContactsViewController",
                   @"FindFriendEntryViewController", @"MoreViewController",
                   @"ContactInfoViewController"];
-        // One switch per page, matching WCR's separate per-page corner toggles.
-        keys = @[@"cornersHome", @"cornersContacts", @"cornersDiscover",
-                 @"cornersMe", @"cornersProfile"];
     });
     for (NSUInteger i = 0; i < names.count; ++i) {
         Class cls = NSClassFromString(names[i]);
-        if (cls && [owner isKindOfClass:cls]) return keys[i];
+        if (cls && [owner isKindOfClass:cls]) return @"list";
     }
     return nil;
 }
 static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot) {
-    NSString *key = WCKCornerPageKey(owner);
-    // Unknown pages and our own settings pages never become eligible.
-    return key != nil && [snapshot[key] boolValue];
+    // Unknown pages and our own settings pages never enter the card path; the
+    // generic view path below has its own exclusions.
+    return WCKCornerPageKey(owner) != nil && [snapshot[@"cornersList"] boolValue];
 }
+// ---- generic view corners: menus, search fields and other painted containers
+
+static void (*sViewDidMoveToWindow)(id, SEL);
+static void (*sViewSetBackgroundColor)(id, SEL, UIColor *);
+static char sCornerViewMarkerKey;
+
+static NSArray<NSString *> *WCKCornerViewExcludedClasses(void) {
+    static NSArray *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = @[@"UIImageView", @"UILabel", @"UITextView", @"UITextField",
+                  @"UIVisualEffectView", @"UIScrollView", @"UITableView", @"UICollectionView",
+                  @"UIWebView", @"WKWebView", @"UINavigationBar", @"UITabBar", @"UIToolbar",
+                  @"UIWindow", @"UIInputSetContainerView", @"UIInputView", @"UIPickerView",
+                  @"UIDatePicker", @"UIActivityIndicatorView", @"UIProgressView",
+                  @"UISwitch", @"UISlider", @"UISegmentedControl"];
+    });
+    return names;
+}
+static BOOL WCKCornerViewExcluded(Class cls) {
+    for (NSString *name in WCKCornerViewExcludedClasses()) {
+        Class excluded = NSClassFromString(name);
+        if (excluded && [cls isSubclassOfClass:excluded]) return YES;
+    }
+    return [NSStringFromClass(cls) hasPrefix:@"WCK"];   // never touch our own UI
+}
+static BOOL WCKCornerNameHas(UIView *view, NSString *needle, NSUInteger depth) {
+    UIView *current = view;
+    for (NSUInteger i = 0; current && i <= depth; ++i, current = current.superview)
+        if ([NSStringFromClass(current.class) rangeOfString:needle].location != NSNotFound) return YES;
+    return NO;
+}
+static NSString *WCKCornerCategory(UIView *view) {
+    if (WCKCornerNameHas(view, @"Search", 3)) return @"cornersSearch";
+    if (WCKCornerNameHas(view, @"Menu", 2) || WCKCornerNameHas(view, @"Popover", 2) ||
+        WCKCornerNameHas(view, @"Sheet", 2) || WCKCornerNameHas(view, @"Alert", 3))
+        return @"cornersMenu";
+    return @"cornersOther";
+}
+static BOOL WCKCornerViewPaints(UIView *view) {
+    UIColor *colour = view.backgroundColor;
+    if (!colour) return NO;
+    CGFloat alpha = 1;
+    if (![colour getWhite:NULL alpha:&alpha] &&
+        ![colour getRed:NULL green:NULL blue:NULL alpha:&alpha]) return NO;
+    return alpha > 0.01;
+}
+static void WCKCornerClearView(UIView *view) {
+    if (!objc_getAssociatedObject(view, &sCornerViewMarkerKey)) return;
+    view.layer.cornerRadius = 0;
+    view.layer.masksToBounds = NO;
+    objc_setAssociatedObject(view, &sCornerViewMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void WCKCornerApplyToView(UIView *view) {
+    if (!NSThread.isMainThread || ![view isKindOfClass:UIView.class]) return;
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    if (!WCKEnabled(@"corners") || WCKCornerViewExcluded(view.class) ||
+        [view isKindOfClass:UITableViewCell.class] || [view isKindOfClass:UICollectionViewCell.class] ||
+        view.window == nil || view.hidden || view.alpha < 0.01) {
+        WCKCornerClearView(view); return;
+    }
+    BOOL on = [snapshot[WCKCornerCategory(view)] boolValue];
+    BOOL marked = objc_getAssociatedObject(view, &sCornerViewMarkerKey) != nil;
+    // Never overwrite a radius the host set itself; only views that are flat
+    // before we touch them are ours to round.
+    if (!on || !WCKCornerViewPaints(view) || (!marked && view.layer.cornerRadius > 0.01)) {
+        WCKCornerClearView(view); return;
+    }
+    CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"cornersRadius", 12, 24);
+    radius = MIN(radius, MIN(view.bounds.size.width, view.bounds.size.height) / 2.0);
+    if (radius <= 0.5) { WCKCornerClearView(view); return; }
+    view.layer.cornerRadius = radius;
+    view.layer.cornerCurve = kCACornerCurveContinuous;
+    // Only rounded because it paints its own background, so clipping its
+    // content is what makes the corners visible.
+    view.layer.masksToBounds = YES;
+    objc_setAssociatedObject(view, &sCornerViewMarkerKey, @(radius), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void WCKCornerViewDidMove(id view, SEL cmd) {
+    sViewDidMoveToWindow(view, cmd);
+    if (![view isKindOfClass:UIView.class] || !NSThread.isMainThread) return;
+    WCKCornerApplyToView(view);
+    // Bounds are often still zero at didMoveToWindow; retry after layout.
+    __weak UIView *weakView = view;
+    dispatch_async(dispatch_get_main_queue(), ^{ WCKCornerApplyToView(weakView); });
+}
+static void WCKCornerViewSetBackground(id view, SEL cmd, UIColor *colour) {
+    sViewSetBackgroundColor(view, cmd, colour);
+    if (colour) WCKCornerApplyToView(view);
+}
+static void WCKCornerVisitViews(void) {
+    NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) [windows addObject:window];
+    }
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithArray:windows];
+    NSUInteger visited = 0;
+    while (queue.count && visited < 4000) {
+        UIView *view = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        ++visited;
+        WCKCornerApplyToView(view);
+        for (UIView *child in view.subviews) [queue addObject:child];
+    }
+}
+
 static UIColor *WCKCornerDefaultFill(UITableView *table) {
     BOOL dark = NO;
     @try { dark = table.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark; }
@@ -362,6 +466,7 @@ void WCKRefreshCorners(void) {
                 // without snapping visible cards.
                 [cell setNeedsLayout];
             }
+            WCKCornerVisitViews();
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表刷新异常；保留宿主状态");
         } @finally { sCornerRefreshQueued = NO; }
@@ -392,6 +497,12 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMainReuse, "v", NULL, 0);
             mainReady = mf && ml && mr;
         }
+        BOOL viewMoved = WCKInstallHook(UIView.class, @selector(didMoveToWindow),
+            (IMP)WCKCornerViewDidMove, (IMP *)&sViewDidMoveToWindow, "v", NULL, 0);
+        BOOL viewColour = WCKInstallHook(UIView.class, @selector(setBackgroundColor:),
+            (IMP)WCKCornerViewSetBackground, (IMP *)&sViewSetBackgroundColor, "v",
+            (const char *[]){"@"}, 1);
+        WCKSetModuleStatus(@"corners.views", viewMoved && viewColour ? @"ready" : @"控件圆角 hook 不可用");
         WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification

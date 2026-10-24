@@ -25,6 +25,8 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @property(nonatomic, readonly) CGColorRef CGColor;
 + (instancetype)colorWithRed:(CGFloat)red green:(CGFloat)green blue:(CGFloat)blue alpha:(CGFloat)alpha;
 + (instancetype)colorWithCGColor:(CGColorRef)cgColor;
+- (BOOL)getWhite:(CGFloat *)white alpha:(CGFloat *)alpha;
+- (BOOL)getRed:(CGFloat *)red green:(CGFloat *)green blue:(CGFloat *)blue alpha:(CGFloat *)alpha;
 + (instancetype)clearColor;
 + (instancetype)whiteColor;
 + (instancetype)blackColor;
@@ -71,8 +73,17 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 - (void)setNeedsLayout;
 - (void)layoutIfNeeded;
 - (void)layoutSubviews;
+- (void)didMoveToWindow;
 @end
 @interface UIWindow : UIView @end
+@interface UIScene : NSObject @end
+@interface UIWindowScene : UIScene
+@property(nonatomic, readonly) NSArray<UIWindow *> *windows;
+@end
+@interface UIApplication : NSObject
+@property(class, nonatomic, readonly) UIApplication *sharedApplication;
+@property(nonatomic, readonly) NSSet<UIScene *> *connectedScenes;
+@end
 @interface UIScrollView : UIView @end
 @interface UIButton : UIView @end
 
@@ -82,6 +93,7 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @property(nonatomic, strong) UIView *selectedBackgroundView;
 - (void)prepareForReuse;
 @end
+@interface UICollectionViewCell : UIView @end
 @interface UITableView : UIScrollView
 @property(nonatomic) NSInteger numberOfSections;
 @property(nonatomic) NSUInteger fixtureBeginUpdates, fixtureEndUpdates;

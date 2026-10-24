@@ -33,24 +33,26 @@ class CornersContract(unittest.TestCase):
     def test_only_explicit_host_cell_hooks(self):
         self.assertIn('NSClassFromString(@"MMTableViewCell")', source)
         self.assertIn('NSClassFromString(@"NewMainFrameCell")', source)
-        for forbidden in ['WCKInstallHook(UIView.class', 'WCKInstallHook(UITableViewCell.class',
-                          'sOriginalSetBackgroundColor', 'WCKInstallHook(UIButton.class',
-                          'heightForHeaderInSection']:
+        # Only the explicit cell hooks and the generic view hooks are allowed.
+        for forbidden in ['WCKInstallHook(UITableViewCell.class',
+                          'WCKInstallHook(UIButton.class', 'heightForHeaderInSection']:
             self.assertNotIn(forbidden, source)
+        self.assertIn('WCKInstallHook(UIView.class, @selector(didMoveToWindow)', source)
+        self.assertIn('WCKInstallHook(UIView.class, @selector(setBackgroundColor:)', source)
 
     def test_supported_page_scope_is_fail_closed(self):
         for name in ['NewMainFrameViewController', 'ContactsViewController',
                      'FindFriendEntryViewController', 'MoreViewController',
                      'ContactInfoViewController']:
             self.assertIn('@"' + name + '"', source)
-        # One switch per page, not one shared scope value.
-        for key in ['cornersHome', 'cornersContacts', 'cornersDiscover',
-                    'cornersMe', 'cornersProfile']:
+        # Independent switches per control type, not per page.
+        for key in ['cornersList', 'cornersMenu', 'cornersSearch', 'cornersOther']:
             self.assertIn('@"' + key + '"', source)
             self.assertIn('@"' + key + '"', page)
             self.assertIn('@"' + key + '"', settings)
         enabled = body('WCKCornerPageEnabled')
-        self.assertIn('key != nil && [snapshot[key] boolValue]', enabled)
+        self.assertIn('WCKCornerPageKey(owner) != nil', enabled)
+        self.assertIn('[snapshot[@"cornersList"] boolValue]', enabled)
         self.assertNotIn('cornersScope', source)
         self.assertNotIn('cornersScope', page)
 
@@ -114,7 +116,10 @@ class CornersContract(unittest.TestCase):
         self.assertIn('cornersSpacing', page)
 
     def test_host_clipping_and_button_background_are_untouched(self):
-        self.assertNotRegex(source, r'\.masksToBounds\s*=')
+        # The list path must not clip cells; only the generic view path clips
+        # the container it just rounded.
+        self.assertNotIn('cell.layer.masksToBounds', source)
+        self.assertNotRegex(source, r'(?<!view\.layer)\.masksToBounds = YES;')
         self.assertIn('layer.borderColor = border.CGColor', source)
         self.assertNotIn('WCKInstallHook(UIButton.class', source)
         self.assertIn('restore.border-applied', model)
@@ -132,8 +137,8 @@ class CornersContract(unittest.TestCase):
 
     def test_settings_keys_and_controls_match(self):
         for key in ['corners', 'cornersRadius', 'cornersMargin', 'cornersSpacing',
-                    'cornersHome', 'cornersContacts', 'cornersDiscover', 'cornersMe',
-                    'cornersProfile', 'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
+                    'cornersList', 'cornersMenu', 'cornersSearch', 'cornersOther',
+                    'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
             self.assertIn('@"' + key + '"', settings)
             self.assertIn('@"' + key + '"', page)
         self.assertIn('slider.tag = path.row;', detail)
@@ -147,7 +152,8 @@ class CornersContract(unittest.TestCase):
         self.assertIn('[cell setNeedsLayout];', refresh)
         self.assertNotIn('layoutIfNeeded', refresh)
         self.assertNotIn('beginUpdates', refresh)
-        self.assertNotIn('connectedScenes', source)
+        self.assertIn('WCKCornerVisitViews', refresh)
+        self.assertIn('visited < 4000', source)
         self.assertIn('refresh.registered', model)
 
 

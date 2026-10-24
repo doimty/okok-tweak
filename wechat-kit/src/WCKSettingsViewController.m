@@ -258,7 +258,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     if ([featureID isEqualToString:@"albumSheet"])
         return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
     if ([featureID isEqualToString:@"corners"])
-        return @"每个页面单独开关。开启后列表单元格变成独立卡片：圆角、左右边距与上下间距由上面的参数控制；留空背景色时使用默认卡片色（深色 #2C2C2E、浅色白色）。不改 contentView，按钮与宿主描边保持原样。关闭后恢复宿主样式。";
+        return @"按控件类型分别开关，每类互不影响。列表卡片会留出左右边距与上下间距，菜单、搜索框和其他带背景的控件只按半径圆角，不改尺寸。留空背景色时卡片使用默认色（深色 #2C2C2E、浅色白色）。关闭后恢复宿主样式。";
     return @"";
 }
 
@@ -278,16 +278,14 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
               @"min": @0, @"max": @30, @"help": @"卡片左右与列表边缘的距离（WCR 范围 0–30）。"},
             @{@"type": @"slider", @"key": @"cornersSpacing", @"title": @"卡片间距",
               @"min": @0, @"max": @20, @"help": @"相邻卡片上下的空隙；0 表示卡片相连。"},
-            @{@"type": @"switch", @"key": @"cornersHome", @"title": @"会话页",
-              @"help": @"微信首页会话列表。"},
-            @{@"type": @"switch", @"key": @"cornersContacts", @"title": @"通讯录",
-              @"help": @"通讯录列表。"},
-            @{@"type": @"switch", @"key": @"cornersDiscover", @"title": @"发现页",
-              @"help": @"发现页的列表。"},
-            @{@"type": @"switch", @"key": @"cornersMe", @"title": @"我",
-              @"help": @"我页面的功能列表。"},
-            @{@"type": @"switch", @"key": @"cornersProfile", @"title": @"资料卡",
-              @"help": @"联系人资料页的列表。"},
+            @{@"type": @"switch", @"key": @"cornersList", @"title": @"列表卡片",
+              @"help": @"会话、通讯录、发现、我、资料页的列表单元格。"},
+            @{@"type": @"switch", @"key": @"cornersMenu", @"title": @"菜单与弹窗",
+              @"help": @"长按菜单、弹出面板、ActionSheet 与弹窗容器。"},
+            @{@"type": @"switch", @"key": @"cornersSearch", @"title": @"搜索框",
+              @"help": @"搜索栏与搜索输入容器。"},
+            @{@"type": @"switch", @"key": @"cornersOther", @"title": @"其他控件",
+              @"help": @"其他自己绘制背景的容器；默认关闭，避免误伤。"},
             @{@"key": @"cornersFill", @"title": @"卡片背景色",
               @"help": @"留空使用默认卡片色（#2C2C2E / 白）。格式 #RRGGBB。"},
             @{@"type": @"slider", @"key": @"cornersStrokeWidth", @"title": @"描边宽度",

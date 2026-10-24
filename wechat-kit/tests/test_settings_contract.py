@@ -29,18 +29,18 @@ class SettingsContract(unittest.TestCase):
                                "albumSheet", "readAll", "svgTintLight", "svgTintDark",
                                "svgInclude", "svgExclude", "momentsFormat",
                                "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
-                               "cornersRadius", "corners", "cornersHome", "cornersContacts",
-                               "cornersDiscover", "cornersMe", "cornersProfile",
+                               "cornersRadius", "corners", "cornersList", "cornersMenu",
+                               "cornersSearch", "cornersOther",
                                "cornersMargin", "cornersSpacing", "cornersStrokeWidth",
                                "cornersFill", "cornersStrokeColor"})
-        self.assertEqual(defaults.count("@NO"), 7)
+        self.assertEqual(defaults.count("@NO"), 8)
         # Palette defaults to a usable non-empty set and fixed mode stays the default.
         self.assertIn('@"svgUseFixedColor": @YES', defaults)
         self.assertIn('@"svgPaletteHexes": WCKDefaultSVGPalette()', defaults)
         self.assertIn('@"svgRandomAlpha": @1.0', defaults)
         self.assertIn('@"cornersRadius": @12.0', defaults)
-        self.assertIn('@"cornersHome": @YES', defaults)
-        self.assertIn('@"cornersDiscover": @YES', defaults)
+        self.assertIn('@"cornersList": @YES', defaults)
+        self.assertIn('@"cornersOther": @NO', defaults)
         self.assertIn('@"cornersMargin": @8.0', defaults)
         self.assertIn('@"cornersSpacing": @8.0', defaults)
         self.assertIn('@"cornersFill": @""', defaults)

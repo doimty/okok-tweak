@@ -31,6 +31,21 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 + (instancetype)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a {
     UIColor *c = [self new]; c->_fixtureColor = CGColorCreateGenericRGB(r,g,b,a); return c;
 }
+- (BOOL)getWhite:(CGFloat *)white alpha:(CGFloat *)alpha {
+    if (!_fixtureColor) return NO;
+    const CGFloat *c=CGColorGetComponents(_fixtureColor);
+    size_t n=CGColorGetNumberOfComponents(_fixtureColor);
+    if (n==2) { if (white) *white=c[0]; if (alpha) *alpha=c[1]; return YES; }
+    if (n==4 && c[0]==c[1] && c[1]==c[2]) { if (white) *white=c[0]; if (alpha) *alpha=c[3]; return YES; }
+    return NO;
+}
+- (BOOL)getRed:(CGFloat *)red green:(CGFloat *)green blue:(CGFloat *)blue alpha:(CGFloat *)alpha {
+    if (!_fixtureColor) return NO;
+    const CGFloat *c=CGColorGetComponents(_fixtureColor);
+    if (CGColorGetNumberOfComponents(_fixtureColor)!=4) return NO;
+    if (red) *red=c[0]; if (green) *green=c[1]; if (blue) *blue=c[2]; if (alpha) *alpha=c[3];
+    return YES;
+}
 + (instancetype)colorWithCGColor:(CGColorRef)cg {
     if (!cg) return nil;
     UIColor *c = [self new]; c->_fixtureColor = CGColorCreateCopy(cg); return c;
@@ -57,6 +72,7 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @property(nonatomic, strong) NSMutableArray<UIView *> *fixtureChildren;
 @end
 @implementation UIView
+- (void)didMoveToWindow {}
 - (instancetype)init {
     if ((self=[super init])) { _layer=[CALayer new]; _alpha=1; _fixtureChildren=[NSMutableArray new]; }
     return self;
@@ -92,8 +108,21 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 - (void)layoutSubviews { ++_fixtureLayoutCalls; }
 @end
 @implementation UIWindow @end
+@implementation UIScene @end
+@implementation UIWindowScene
+- (NSArray<UIWindow *> *)windows { return @[]; }
+@end
+@implementation UIApplication
++ (instancetype)sharedApplication {
+    static UIApplication *shared; static dispatch_once_t once;
+    dispatch_once(&once, ^{ shared=[self new]; });
+    return shared;
+}
+- (NSSet<UIScene *> *)connectedScenes { return [NSSet set]; }
+@end
 @implementation UIScrollView @end
 @implementation UIButton @end
+@implementation UICollectionViewCell @end
 @implementation UITableViewCell
 - (instancetype)init {
     if ((self=[super init])) {
@@ -197,8 +226,8 @@ static void setting(NSString *key, id value) {
 static void defaults(void) {
     setting(@"enabled",@YES); setting(@"corners",@YES);
     setting(@"cornersMargin",@24); setting(@"cornersRadius",@12); setting(@"cornersSpacing",@0);
-    setting(@"cornersHome",@YES); setting(@"cornersContacts",@YES);
-    setting(@"cornersDiscover",@NO); setting(@"cornersMe",@NO); setting(@"cornersProfile",@NO);
+    setting(@"cornersList",@YES); setting(@"cornersMenu",@YES);
+    setting(@"cornersSearch",@YES); setting(@"cornersOther",@NO);
     setting(@"cornersFill",@""); setting(@"cornersStrokeWidth",@0); setting(@"cornersStrokeColor",@"");
 }
 
@@ -364,8 +393,7 @@ static void geometry(void) {
 }
 static void isolation(void) {
     NSArray *excluded=@[WCKSettingsViewController.class,WCKUnknownViewController.class];
-    for (NSString *key in @[@"cornersHome",@"cornersContacts",@"cornersDiscover",
-                            @"cornersMe",@"cornersProfile"]) setting(key,@YES);
+    setting(@"cornersList",@YES);
     {
         for (Class c in excluded) {
             WCKCornerScene *s=scene(c,0,0); CGRect r=CGRectMake(0,100,420,60);
@@ -381,10 +409,10 @@ static void isolation(void) {
     NSArray *allOnly=@[FindFriendEntryViewController.class,MoreViewController.class,ContactInfoViewController.class];
     for (Class c in allOnly) {
         WCKCornerScene *s=scene(c,0,0);
-        setting(@"cornersDiscover",@NO); setting(@"cornersMe",@NO); setting(@"cornersProfile",@NO);
+        setting(@"cornersList",@NO);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.page-off");
         layout(s); hostStyle(s,"scope.page-off-host");
-        setting(@"cornersDiscover",@YES); setting(@"cornersMe",@YES); setting(@"cornersProfile",@YES);
+        setting(@"cornersList",@YES);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.page-on");
         layout(s); rounded(s);
     }
@@ -450,8 +478,8 @@ static void restore(void) {
             [l.cornerCurve isEqual:@"new-host"] && near(l.borderWidth,3) && sameColor(l.borderColor,newBorder.CGColor));
     }
     CHECK_ID("restore.host-new-bg",s.cell.backgroundColor==newHost);
-    defaults(); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
-    setting(@"cornersMe",@YES); layout(s); rounded(s);
+    defaults(); setting(@"cornersList",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
+    setting(@"cornersList",@YES); layout(s); rounded(s);
     // Same cell migrates to an excluded page, not a new cell.
     UIViewController *excluded=[WCKSettingsViewController new];
     s.table.nextResponder=excluded.view; s.table.superview=excluded.view;
@@ -534,8 +562,11 @@ static void abi(void) {
     for (NSDictionary *entry in hookTargets) {
         NSString *c=entry[@"class"], *sel=entry[@"selector"];
         BOOL cellTarget=[@[@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
-        BOOL allowedSelector=[sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
-            [sel isEqual:@"prepareForReuse"];
+        BOOL viewTarget=[c isEqual:@"UIView"];
+        BOOL allowedSelector=viewTarget
+            ? ([sel isEqual:@"didMoveToWindow"] || [sel isEqual:@"setBackgroundColor:"])
+            : ([sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
+               [sel isEqual:@"prepareForReuse"]);
         CHECK_ID("hooks.allowed-target",cellTarget && allowedSelector);
     }
 }
