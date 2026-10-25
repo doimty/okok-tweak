@@ -504,8 +504,8 @@ static void restore(void) {
             [l.cornerCurve isEqual:@"new-host"] && near(l.borderWidth,3) && sameColor(l.borderColor,newBorder.CGColor));
     }
     CHECK_ID("restore.host-new-bg",s.cell.backgroundColor==newHost);
-    defaults(); setting(@"mainFrameCornerEnabled",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
-    setting(@"mainFrameCornerEnabled",@YES); layout(s); rounded(s);
+    defaults(); setting(@"myPageCornerEnabled",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
+    setting(@"myPageCornerEnabled",@YES); layout(s); rounded(s);
     // Same cell migrates to an excluded page, not a new cell.
     UIViewController *excluded=[WCKSettingsViewController new];
     s.table.nextResponder=excluded.view; s.table.superview=excluded.view;
