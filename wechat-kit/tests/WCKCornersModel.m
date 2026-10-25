@@ -426,13 +426,19 @@ static void isolation(void) {
         CHECK_ID("isolation.button",sameRect(b.frame,CGRectMake(0,1,420,40)) &&
             near(b.layer.cornerRadius,3) && b.backgroundColor==s.hostColor && !b.layer.masksToBounds);
     }
-    NSArray *allOnly=@[FindFriendEntryViewController.class,MoreViewController.class,ContactInfoViewController.class];
-    for (Class c in allOnly) {
+    NSArray *pageOnly = @[
+        @{ @"class": FindFriendEntryViewController.class, @"key": @"discoverPageCornerEnabled" },
+        @{ @"class": MoreViewController.class, @"key": @"myPageCornerEnabled" },
+        @{ @"class": ContactInfoViewController.class, @"key": @"friendProfileCornerEnabled" }
+    ];
+    for (NSDictionary *entry in pageOnly) {
+        Class c=entry[@"class"];
+        NSString *pageKey=entry[@"key"];
         WCKCornerScene *s=scene(c,0,0);
-        setting(@"mainFrameCornerEnabled",@NO);
+        setting(pageKey,@NO);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.page-off");
         layout(s); hostStyle(s,"scope.page-off-host");
-        setting(@"mainFrameCornerEnabled",@YES);
+        setting(pageKey,@YES);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.page-on");
         layout(s); rounded(s);
     }
