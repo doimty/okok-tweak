@@ -687,23 +687,25 @@ void WCKInstallCorners(void) {
             (const char *[]){"@"}, 1);
         BOOL viewLayout = WCKInstallHook(UIView.class, @selector(layoutSubviews),
             (IMP)WCKCornerViewLayout, (IMP *)&sViewLayoutSubviews, "v", NULL, 0);
+        // Host classes differ between WeChat builds. A missing class is not an
+        // error: skip it so one absent host never disables the others.
         Class avatar = NSClassFromString(@"MMHeadImageView");
         Class profileAvatar = NSClassFromString(@"TLProfileImageView");
         Class fakeAvatar = NSClassFromString(@"FakeHeadImageView");
-        BOOL avatarReady = WCKInstallHook(avatar, @selector(layoutSubviews),
+        BOOL avatarReady = avatar && WCKInstallHook(avatar, @selector(layoutSubviews),
             (IMP)WCKAvatarLayout, (IMP *)&sAvatarLayoutSubviews, "v", NULL, 0);
-        BOOL profileAvatarReady = WCKInstallHook(profileAvatar, @selector(layoutSubviews),
+        BOOL profileAvatarReady = profileAvatar && WCKInstallHook(profileAvatar, @selector(layoutSubviews),
             (IMP)WCKProfileAvatarLayout, (IMP *)&sProfileAvatarLayoutSubviews, "v", NULL, 0);
-        BOOL fakeAvatarReady = WCKInstallHook(fakeAvatar, @selector(layoutSubviews),
+        BOOL fakeAvatarReady = fakeAvatar && WCKInstallHook(fakeAvatar, @selector(layoutSubviews),
             (IMP)WCKFakeAvatarLayout, (IMP *)&sFakeAvatarLayoutSubviews, "v", NULL, 0);
         Class navBar = NSClassFromString(@"MMMsgContentNavBar");
         Class newNavBar = NSClassFromString(@"MMNewMsgContentNavBar");
-        BOOL navReady = WCKInstallHook(navBar, @selector(layoutSubviews),
+        BOOL navReady = navBar && WCKInstallHook(navBar, @selector(layoutSubviews),
             (IMP)WCKMsgNavBarLayout, (IMP *)&sMsgNavBarLayoutSubviews, "v", NULL, 0);
-        BOOL newNavReady = WCKInstallHook(newNavBar, @selector(layoutSubviews),
+        BOOL newNavReady = newNavBar && WCKInstallHook(newNavBar, @selector(layoutSubviews),
             (IMP)WCKNewMsgNavBarLayout, (IMP *)&sNewMsgNavBarLayoutSubviews, "v", NULL, 0);
         Class tabBar = NSClassFromString(@"MMTabBar");
-        BOOL tabReady = WCKInstallHook(tabBar, @selector(layoutSubviews),
+        BOOL tabReady = tabBar && WCKInstallHook(tabBar, @selector(layoutSubviews),
             (IMP)WCKTabBarLayout, (IMP *)&sTabBarLayoutSubviews, "v", NULL, 0);
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");

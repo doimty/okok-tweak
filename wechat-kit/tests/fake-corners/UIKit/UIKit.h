@@ -87,6 +87,10 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @interface UIScrollView : UIView @end
 @interface UIButton : UIView @end
 
+@interface UIImageView : UIView
+@property(nonatomic, strong) id image;
+@end
+
 @interface UITableViewCell : UIView
 @property(nonatomic, strong) UIView *contentView;
 @property(nonatomic, strong) UIView *backgroundView;
@@ -116,6 +120,13 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @interface MMTableViewCell : UITableViewCell @end
 @interface MMMultiMenuTableViewCell : UITableViewCell @end
 @interface NewMainFrameCell : MMMultiMenuTableViewCell @end
+// Verified WeChat host classes the production hooks install onto.
+@interface MMHeadImageView : UIImageView @end
+@interface TLProfileImageView : UIImageView @end
+@interface FakeHeadImageView : UIImageView @end
+@interface MMMsgContentNavBar : UIView @end
+@interface MMNewMsgContentNavBar : UIView @end
+@interface MMTabBar : UIView @end
 #define WCK_FIXTURE_CONTROLLER(name) \
 @interface name : UIViewController \
 @end

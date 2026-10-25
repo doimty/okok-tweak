@@ -175,6 +175,13 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @implementation WCKUnknownViewController @end
 @implementation MMTableViewCell @end
 @implementation MMMultiMenuTableViewCell @end
+@implementation UIImageView @end
+@implementation MMHeadImageView @end
+@implementation TLProfileImageView @end
+@implementation FakeHeadImageView @end
+@implementation MMMsgContentNavBar @end
+@implementation MMNewMsgContentNavBar @end
+@implementation MMTabBar @end
 @implementation NewMainFrameCell
 #if WCK_CORNERS_HOST_OVERRIDE
 - (void)setFrame:(CGRect)r { [super setFrame:r]; }
