@@ -28,7 +28,7 @@ static BOOL WCKHubContainsController(NSArray *plugins, BOOL *readable) {
 }
 
 BOOL WCKRegisterPluginEntry(void) {
-    if (!NSThread.isMainThread || !WCKHostIsSupported() || sRegistrationInProgress) return NO;
+    if (!NSThread.isMainThread || sRegistrationInProgress) return NO;
     // Never depend on a feature toggle or on Substrate/navigation hook availability.
     Class managerClass = NSClassFromString(@"WCPluginsMgr");
     if (!managerClass || !NSClassFromString(WCKControllerName)) {

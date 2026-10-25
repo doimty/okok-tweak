@@ -79,7 +79,7 @@ static BOOL WCKAddSettingsRow(UIViewController *host, WCKSettingsEntry *driver) 
 }
 
 static void WCKRefreshEntry(UIViewController *host) {
-    if (!NSThread.isMainThread || !WCKHostIsSupported()) return;
+    if (!NSThread.isMainThread) return;
     WCKRegisterPluginEntry();
     WCKSettingsEntry *driver = WCKDriver(host);
     if (driver.updating) return;
@@ -122,7 +122,7 @@ static void WCKHubLoaded(UIViewController *host, SEL selector) {
 }
 
 void WCKInstallEntryPoints(void) {
-    if (!NSThread.isMainThread || !WCKHostIsSupported()) return;
+    if (!NSThread.isMainThread) return;
     WCKRegisterPluginEntry();
     Class settings = NSClassFromString(@"NewSettingViewController");
     if (!sLoadReady) sLoadReady = WCKInstallHook(settings, @selector(viewDidLoad),

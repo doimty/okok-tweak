@@ -15,7 +15,6 @@ variants={'baseline':{},
  'mutant-keyboard-no-epoch':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('epoch != sKeyboardEpoch', '((void)epoch, NO)')},
  'mutant-keyboard-current-offset':{'WCKKeyboard.m':original['WCKKeyboard.m'].replace('CGFloat stop = target ? target->y : offset;', 'CGFloat stop = offset;')},
  'mutant-time-no-restore':{'WCKMomentsTime.m':original['WCKMomentsTime.m'].replace('state.label.text = state.originalText;', '(void)state.originalText;')},
- 'mutant-album-old-client':{'WCKAlbumSheet.m':original['WCKAlbumSheet.m'].replace('if (!WCKAlbumBundleSupported(NSBundle.mainBundle))', 'if (NO && !WCKAlbumBundleSupported(NSBundle.mainBundle))')},
  'mutant-album-all-keys':{'WCKAlbumSheet.m':original['WCKAlbumSheet.m'].replace('[key isEqualToString:@"clicfg_chat_album_pagesheet_mode"]', 'YES')},
 }
 rows=[]
@@ -32,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='wck-behavior-') as td:
   c=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
   assert c.returncode==0,(name,'COMPILE FAILED',c.stderr)
   runs=[]
-  modes=['normal','missing_adjust','album_old','album_malformed','album_missing'] if name=='baseline' else (['album_old'] if name=='mutant-album-old-client' else ['normal'])
+  modes=['normal','missing_adjust','album_old','album_malformed','album_missing'] if name=='baseline' else ['normal']
   for mode in modes:
    home=d/mode;home.mkdir();env=dict(os.environ,HOME=str(home))
    p=subprocess.run([str(exe),mode],env=env,capture_output=True,text=True,timeout=20)

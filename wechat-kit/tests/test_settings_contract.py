@@ -48,6 +48,14 @@ class SettingsContract(unittest.TestCase):
         self.assertIn('@"globalCornerSpacing"] = @8.0', source)
         self.assertIn('@"corners": @NO', source)
 
+    def test_legacy_corner_preferences_migrate(self):
+        for pair in ['@[@"cornersRadius", @"globalCornerRadius"]',
+                     '@[@"cornersMargin", @"globalCornerMargin"]',
+                     '@[@"cornersHome", @"mainFrameCornerEnabled"]',
+                     '@[@"cornersContacts", @"homepageCornerEnabled"]']:
+            self.assertIn(pair, self.m)
+        self.assertIn('if (plist[newKey] != nil || plist[oldKey] == nil) continue;', self.m)
+
     def test_every_declared_switch_has_a_default(self):
         page = (ROOT / "src/WCKSettingsViewController.m").read_text()
         declared = set(re.findall(r'@"key"\s*:\s*@"([A-Za-z0-9]+)"', page))
@@ -96,15 +104,16 @@ class SettingsContract(unittest.TestCase):
 
     def test_runtime_gates_and_disable_escape(self):
         self.assertIn('#import "WCKRuntime.h"', self.vm)
+        # Hook status is informational only; it no longer blocks execution.
         self.assertIn("WCKRuntimeStatuses()", self.vm)
-        self.assertIn("WCKHostIsSupported()", self.vm)
         self.assertIn('isEqualToString:@"ready"', self.vm)
-        # Only the master switch lives on the list; feature switches moved to
-        # their second-level pages.
-        self.assertIn("toggle.enabled = self.hostSupported || stored;", self.vm)
-        self.assertNotIn('@"wck.switch." stringByAppendingString:key', self.vm)
+        self.assertNotIn("WCKHostIsSupported()", self.vm)
+        self.assertIn("return [key isKindOfClass:NSString.class] && self.settings.snapshot[key] != nil;", self.vm)
+        self.assertIn("toggle.enabled = YES;", self.vm)
         detail = (ROOT / "src/WCKFeatureDetailViewController.m").read_text()
-        self.assertIn("toggle.enabled = ready || stored;", detail)
+        self.assertIn("toggle.enabled = [self canEditFeature];", detail)
+        self.assertIn("self.settings.snapshot[self.settingsKey] != nil", detail)
+        self.assertNotIn("hostSupportsFeature", detail)
         self.assertIn("wck.feature.switch.", detail)
         self.assertIn("sender.isOn && !canEnable", self.vm)
         # The colour details moved to the second-level page; the first page only

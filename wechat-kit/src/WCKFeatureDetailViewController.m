@@ -56,15 +56,19 @@
     [self.tableView reloadData];
 }
 
-- (BOOL)hostSupportsFeature {
+- (BOOL)canEditFeature {
+    return self.settings.snapshot[self.settingsKey] != nil;
+}
+
+- (BOOL)featureReady {
     id status = WCKRuntimeStatuses()[self.featureID];
-    return WCKHostIsSupported() && [status isKindOfClass:NSString.class] && [status isEqualToString:@"ready"];
+    return [status isKindOfClass:NSString.class] && [status isEqualToString:@"ready"];
 }
 
 - (void)refreshToggle {
     BOOL stored = [self.settings boolForKey:self.settingsKey];
     self.toggle.on = stored;
-    self.toggle.enabled = [self hostSupportsFeature] || stored;
+    self.toggle.enabled = [self canEditFeature];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -107,13 +111,14 @@
 
     if (path.section == 0) {
         cell.textLabel.text = @"启用";
-        BOOL ready = [self hostSupportsFeature];
+        BOOL ready = [self featureReady];
         BOOL stored = [self.settings boolForKey:self.settingsKey];
         cell.detailTextLabel.text = ready ? (stored ? @"已开启" : @"已关闭")
-                                          : (stored ? @"宿主未就绪；已存开启仅可关闭" : @"宿主未就绪，暂不可开启");
+            : (stored ? @"已保存开启；当前 Hook 状态未就绪，仍会尝试运行"
+                      : @"Hook 状态未就绪；仍可尝试开启");
         UISwitch *toggle = [UISwitch new];
         toggle.on = stored;
-        toggle.enabled = ready || stored;
+        toggle.enabled = [self canEditFeature];
         toggle.accessibilityIdentifier = [@"wck.feature.switch." stringByAppendingString:self.settingsKey];
         [toggle addTarget:self action:@selector(toggleChanged:) forControlEvents:UIControlEventValueChanged];
         self.toggle = toggle;
@@ -128,8 +133,8 @@
         cell.textLabel.text = row[@"title"];
         cell.textLabel.textColor = UIColor.labelColor;
         cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-        BOOL editable = [self hostSupportsFeature];
-        cell.textLabel.enabled = editable;
+        BOOL editable = YES;
+        cell.textLabel.enabled = YES;
         if ([type isEqualToString:@"header"]) {
             cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
             cell.textLabel.textColor = UIColor.secondaryLabelColor;
@@ -187,7 +192,7 @@
 }
 
 - (void)toggleChanged:(UISwitch *)sender {
-    if (sender.isOn && ![self hostSupportsFeature]) {
+    if (sender.isOn && ![self canEditFeature]) {
         [self refreshToggle];
         [self.tableView reloadData];
         return;
@@ -263,7 +268,7 @@
     [tableView deselectRowAtIndexPath:path animated:YES];
     if (path.section != 2) return;
     NSDictionary<NSString *, id> *row = [self extraRowAtRow:path.row];
-    if (!row || ![self hostSupportsFeature]) return;
+    if (!row || ![self canEditFeature]) return;
     if ([row[@"type"] isEqualToString:@"choice"]) {
         [self presentChoiceForRow:row];
         return;

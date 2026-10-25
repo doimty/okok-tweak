@@ -9,18 +9,11 @@ static NSHashTable *sReadDrivers;
 static void (*sOriginalTabMove)(UIView *, SEL);
 static void (*sOriginalTabLayout)(UIView *, SEL);
 
-// Validate the receiver, not the requested class: host services may be NSProxy.
-// Keep all sends on the wrapper; never bypass its account/lifetime semantics.
+// Require a callable method signature, but do not compare encodings or arity.
 static BOOL WCKReadSignatureMatches(id receiver, SEL selector, const char *result,
         const char *const *arguments, NSUInteger count) {
-    NSMethodSignature *signature = [receiver methodSignatureForSelector:selector];
-    if (!signature || signature.numberOfArguments != count + 2 ||
-        !WCKTypeMatches(signature.methodReturnType, result) ||
-        !WCKTypeMatches([signature getArgumentTypeAtIndex:0], "@") ||
-        !WCKTypeMatches([signature getArgumentTypeAtIndex:1], ":")) return NO;
-    for (NSUInteger i = 0; i < count; ++i)
-        if (!WCKTypeMatches([signature getArgumentTypeAtIndex:i + 2], arguments[i])) return NO;
-    return YES;
+    (void)result; (void)arguments; (void)count;
+    return receiver && selector && [receiver methodSignatureForSelector:selector] != nil;
 }
 static void WCKReadRequire(BOOL valid, NSString *reason) {
     if (!valid) @throw [NSException exceptionWithName:@"WCKReadAllContract" reason:reason userInfo:nil];
@@ -48,7 +41,7 @@ static id WCKServiceCenter(void) {
     NSString *entry = NSStringFromSelector(selector);
     WCKReadRequire(cls && class_getClassMethod(cls, selector), @"账号上下文入口不可用");
     WCKReadRequire(WCKReadSignatureMatches(cls, selector, "@", NULL, 0),
-        [entry stringByAppendingString:@" ABI 不匹配"]);
+        [entry stringByAppendingString:@" selector 不存在"]);
     id center = ((id (*)(id,SEL))objc_msgSend)(cls, selector);
     WCKReadRequire(center != nil, [entry stringByAppendingString:@" 返回空上下文"]);
     return center;
@@ -59,7 +52,7 @@ static id WCKService(id center, NSString *name) {
     const char *serviceArgs[] = {"#"};
     SEL selector = NSSelectorFromString(@"getService:");
     WCKReadRequire(center && WCKReadSignatureMatches(center, selector, "@", serviceArgs, 1),
-        @"当前上下文 getService: ABI 不匹配");
+        @"当前上下文 getService: 不存在");
     id service = ((id (*)(id,SEL,Class))objc_msgSend)(center, selector, requested);
     WCKReadRequire(service != nil, [name stringByAppendingString:@" 服务为空"]);
     WCKReadRequire([service isKindOfClass:requested], [name stringByAppendingString:@" 服务类型不匹配"]);
@@ -67,12 +60,12 @@ static id WCKService(id center, NSString *name) {
         const char *objectArgs[] = {"@"};
         const char *clearArgs[] = {"@", "I", "I"};
         WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"GetUnReadCount:"), "I", objectArgs, 1),
-            @"CMessageMgr GetUnReadCount: ABI 不匹配");
+            @"CMessageMgr GetUnReadCount: 不存在");
         WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"ClearUnRead:FromID:ToID:"), "v", clearArgs, 3),
-            @"CMessageMgr ClearUnRead:FromID:ToID: ABI 不匹配");
+            @"CMessageMgr ClearUnRead:FromID:ToID: 不存在");
     } else {
         WCKReadRequire(WCKReadSignatureMatches(service, NSSelectorFromString(@"GetUserNamesOnSessionList"), "@", NULL, 0),
-            @"MMNewSessionMgr GetUserNamesOnSessionList ABI 不匹配");
+            @"MMNewSessionMgr GetUserNamesOnSessionList 不存在");
     }
     return service;
 }
@@ -266,12 +259,12 @@ void WCKInstallReadAll(void) {
     // Installation/layout never resolve account services or write user data.
     // Same entry selection at installation and invocation; no service getter runs here.
     if (!WCKMethodMatches(object_getClass(center), entry, "@", NULL, 0)) {
-        WCKSetModuleStatus(@"readAll", @"账号上下文入口 ABI 不匹配"); return;
+        WCKSetModuleStatus(@"readAll", @"账号上下文入口不存在"); return;
     }
     BOOL matched = manager && sessions
         && WCKMethodMatches(bar, NSSelectorFromString(@"tabBarItemViews"), "@", NULL, 0)
         && NSClassFromString(@"NewMainFrameViewController");
-    if (!matched) { WCKSetModuleStatus(@"readAll", @"服务类或底栏 ABI 不匹配"); return; }
+    if (!matched) { WCKSetModuleStatus(@"readAll", @"服务类或底栏入口不存在"); return; }
     sReadDrivers = [NSHashTable weakObjectsHashTable];
     BOOL layoutInstalled = WCKInstallHook(bar, @selector(layoutSubviews), (IMP)WCKReadBarLayout,
         (IMP *)&sOriginalTabLayout, "v", NULL, 0);

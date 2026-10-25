@@ -4,9 +4,8 @@
 #import "WCKSVGPalette.h"
 #import <math.h>
 
-// WCR evidence: MMTableViewCell.setFrame:/layoutSubviews and the dedicated
-// NewMainFrameCell.setFrame: path. This is an independent, page-scoped repair,
-// not WCR's entire renderer. Never hook UIView or alter a control's background.
+// WCR evidence: list-cell candidates plus dedicated avatar/nav-bar/tab-bar
+// paths. Component families can be opted in and are traversed with a view cap.
 static char sCornerStateKey;
 static NSHashTable<UITableViewCell *> *sCornerCells; // weak, main-thread only
 static _Thread_local NSUInteger sCornerFrameDepth, sCornerLayoutDepth, sCornerReuseDepth;
@@ -108,7 +107,8 @@ static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot
 }
 // ---- generic view corners: menus, search fields and other painted containers
 
-static const BOOL WCKEnableUnverifiedComponentFamilies = NO;
+// No host ABI or class-name binding is enforced; exact family switches still
+// control which discovered views receive styling.
 static void (*sViewDidMoveToWindow)(id, SEL);
 static void (*sViewSetBackgroundColor)(id, SEL, UIColor *);
 static void (*sViewLayoutSubviews)(id, SEL);
@@ -210,12 +210,6 @@ static void WCKCornerApplyToView(UIView *view) {
         view.window == nil || view.hidden || view.alpha < 0.01) { WCKCornerClearView(view); return; }
     NSString *family = WCKCornerFamilyForView(view);
     BOOL enabled = [snapshot[[family stringByAppendingString:@"Enabled"]] boolValue];
-    // The reverse-engineered source proves most WCR keys exist, but does not
-    // prove their WeChat host binding. Keep speculative UIView classification
-    // opt-in until a host anchor or runtime A/B confirms it.
-    if (!WCKEnableUnverifiedComponentFamilies &&
-        ![family isEqualToString:@"avatarCorner"] &&
-        ![family isEqualToString:@"chatImageCorner"]) enabled = NO;
     NSMutableDictionary *saved = [objc_getAssociatedObject(view, &sCornerViewMarkerKey) mutableCopy];
     if (saved && (view.layer.cornerRadius != [saved[@"radius"] doubleValue] ||
                   view.layer.masksToBounds != [saved[@"appliedMasks"] boolValue] ||
@@ -647,9 +641,8 @@ void WCKRefreshCorners(void) {
                 // without snapping visible cards.
                 [cell setNeedsLayout];
             }
-            // Component-family application is disabled by default until its
-            // real WeChat host anchor is verified. List cards remain active.
-            if (WCKEnableUnverifiedComponentFamilies) WCKCornerVisitViews();
+            // Revisit current windows after settings changes; traversal is capped.
+            WCKCornerVisitViews();
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表刷新异常；保留宿主状态");
         } @finally { sCornerRefreshQueued = NO; }

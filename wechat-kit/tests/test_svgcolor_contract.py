@@ -41,8 +41,9 @@ class SVGColorUIContract(unittest.TestCase):
   self.assertIn('[self save:@(sender.isOn) forKey:@"svgTint"]',ui)
   self.assertIn('return @[@"开关", @"配色方式", @"固定颜色", @"随机色板", @"图标名单"][section];',ui)
   detail=(root/'src/WCKFeatureDetailViewController.m').read_text()
-  for s in ['wck.feature.switch.','hostSupportsFeature','self.toggle = toggle']:
+  for s in ['wck.feature.switch.','canEditFeature','self.toggle = toggle']:
    self.assertIn(s,detail)
+  self.assertNotIn('hostSupportsFeature',detail)
 
  def test_settings_page_has_single_entry(self):
   # The list carries one entry per feature; the colour page is reached from it.

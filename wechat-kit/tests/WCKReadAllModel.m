@@ -18,10 +18,7 @@ NSNotificationName const WCKSettingsDidChangeNotification=@"ReadAllFixtureSettin
 BOOL WCKEnabled(NSString *key){return enabled;}
 void WCKSetModuleStatus(NSString *key,NSString *value){status=value;}
 BOOL WCKMethodMatches(Class cls,SEL sel,const char *ret,const char *const *args,unsigned n){
- Method m=cls?class_getInstanceMethod(cls,sel):NULL;
- if(!m||method_getNumberOfArguments(m)!=n+2)return NO;
- char *t=method_copyReturnType(m);BOOL ok=WCKTypeMatches(t,ret);free(t);
- for(unsigned i=0;ok&&i<n;i++){t=method_copyArgumentType(m,i+2);ok=WCKTypeMatches(t,args[i]);free(t);}return ok;
+ (void)ret;(void)args;(void)n;return cls&&sel&&class_getInstanceMethod(cls,sel)!=NULL;
 }
 BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP *old,const char *r,const char *const *a,unsigned n){
  if(!WCKMethodMatches(c,s,r,a,n))return NO;

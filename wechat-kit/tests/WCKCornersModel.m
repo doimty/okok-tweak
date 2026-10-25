@@ -1,5 +1,5 @@
 // Actual production WCKCorners + Settings/Palette/Policy, Foundation fake UIKit.
-// This is an isolation/ownership/ABI model, NOT UIKit, pixels, WeChat or device coverage.
+// This is an isolation/ownership/hook-target model, NOT UIKit, pixels, WeChat or device coverage.
 #import <UIKit/UIKit.h>
 #import "WCKRuntime.h"
 #import "WCKSettings.h"
@@ -206,22 +206,17 @@ NSDictionary *WCKRuntimeStatuses(void) { return statuses.copy; }
 void WCKSetModuleStatus(NSString *k, NSString *v) { statuses[k]=v; }
 BOOL WCKEnabled(NSString *k) {
     NSDictionary *s=WCKSettings.shared.snapshot;
-    return [statuses[k] isEqualToString:@"ready"] && [s[@"enabled"] boolValue] && [s[k] boolValue];
+    return [s[@"enabled"] boolValue] && [s[k] boolValue];
 }
-// Strict encoding equality: do not silently accept q/i, d/f, object/scalar or wrong struct ABIs.
 BOOL WCKMethodMatches(Class c, SEL s, const char *r, const char *const *a, unsigned n) {
-    Method m=c ? class_getInstanceMethod(c,s) : NULL;
-    if (!m || !r || (n && !a) || method_getNumberOfArguments(m)!=n+2) return NO;
-    char *t=method_copyReturnType(m); BOOL ok=t && strcmp(t,r)==0; free(t);
-    for (unsigned i=0; ok && i<n; ++i) {
-        t=method_copyArgumentType(m,i+2); ok=t && a[i] && strcmp(t,a[i])==0; free(t);
-    } return ok;
+    (void)r; (void)a; (void)n;
+    return c && s && class_getInstanceMethod(c,s) != NULL;
 }
 BOOL WCKInstallHook(Class c, SEL s, IMP imp, IMP *old, const char *r, const char *const *a, unsigned n) {
     BOOL valid=WCKMethodMatches(c,s,r,a,n);
     [hookTargets addObject:@{@"class":c ? NSStringFromClass(c) : @"(nil)",
-        @"selector":NSStringFromSelector(s), @"abiValid":@(valid)}];
-    CHECK_ID("hooks.abi",valid && imp && old);
+        @"selector":NSStringFromSelector(s), @"selectorPresent":@(valid)}];
+    CHECK_ID("hooks.target-present",valid && imp && old);
     Method m=class_getInstanceMethod(c,s); *old=method_getImplementation(m);
     if (!class_addMethod(c,s,imp,method_getTypeEncoding(m))) method_setImplementation(m,imp);
     return YES;

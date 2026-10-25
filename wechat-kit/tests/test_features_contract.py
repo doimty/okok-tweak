@@ -9,15 +9,23 @@ class FeatureContracts(unittest.TestCase):
         self.assertEqual(p['Filter']['Bundles'],['com.tencent.xin'])
     def test_enable_snapshot_and_state(self):
         src=(root/'src/WCKRuntime.m').read_text()
-        body=src.split('BOOL WCKEnabled(',1)[1].split('BOOL WCKMethodMatches(',1)[0]
-        for phrase in ['WCKHostIsSupported()', 'WCKRuntimeStatuses()[feature]', 'isEqualToString:@"ready"',
-                       'snapshot[@"enabled"]', 'snapshot[feature]']:
-            self.assertIn(phrase,body)
-    def test_hook_fail_original(self):
+        body=src.split('BOOL WCKEnabled(',1)[1].split('// Runtime compatibility',1)[0]
+        self.assertIn('snapshot[@"enabled"]',body)
+        self.assertIn('snapshot[feature]',body)
+        self.assertNotIn('WCKHostIsSupported()',body)
+        self.assertNotIn('WCKRuntimeStatuses()',body)
+        self.assertNotIn('isEqualToString:@"ready"',body)
+    def test_hook_ignores_abi_but_requires_callable_target(self):
         src=(root/'src/WCKRuntime.m').read_text()
-        self.assertLess(src.index('*original = fallback;'),src.index('hook(cls, selector, replacement, original);'))
-        self.assertIn('if (!*original) { *original = fallback; return NO; }',src)
-        self.assertIn('method_getNumberOfArguments(method) != count + 2',src)
+        matcher=src.split('BOOL WCKMethodMatches(',1)[1].split('\n}',1)[0]
+        self.assertIn('class_getInstanceMethod(cls, selector)',matcher)
+        self.assertIn('(void)returnType; (void)arguments; (void)count;',matcher)
+        self.assertNotIn('WCKTypeMatches',matcher)
+        self.assertNotIn('method_getNumberOfArguments',matcher)
+        installer=src.split('BOOL WCKInstallHook(',1)[1]
+        self.assertNotIn('WCKHostIsSupported()',installer)
+        self.assertIn('dlsym(RTLD_DEFAULT, "MSHookMessageEx")',installer)
+        self.assertIn('if (!*original)',installer)
     def test_original_chat_scroll_keyboard(self):
         src=(root/'src/WCKKeyboard.m').read_text()
         for s in ['NSClassFromString(@"BaseMsgContentViewController")',
@@ -77,8 +85,9 @@ class FeatureContracts(unittest.TestCase):
         self.assertIn('WCKAddSettingsRow(host, driver)',src)
         self.assertIn('sLoadReady || sWillReady || sDidReady || sReloadReady',src)
         self.assertNotIn('loaded && appeared',src)
+        self.assertNotIn('WCKHostIsSupported()',src)
         bootstrap=(root/'src/WCKBootstrap.m').read_text()
-        self.assertIn('if (!WCKHostIsSupported()) return;',bootstrap)
+        self.assertNotIn('if (!WCKHostIsSupported()) return;',bootstrap)
         self.assertLess(bootstrap.index('WCKInstallEntryPoints();'),bootstrap.index('WCKInstallKeyboard();'))
     def test_independent_runtime(self):
         src='\n'.join(p.read_text() for p in (root/'src').glob('*') if p.suffix in ('.h','.c','.m'))

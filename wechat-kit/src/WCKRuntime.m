@@ -5,8 +5,8 @@
 #import <dlfcn.h>
 #import <stdlib.h>
 
-// Resolved from the host's Substrate image. Missing support => no hooks.
-// Signature checked against Substrate API: void MSHookMessageEx(Class,SEL,IMP,IMP*).
+// Resolved from the host's Substrate image. Missing support => hooks are skipped.
+// Runtime method encodings are not compared; selectors are invoked as declared.
 typedef void (*WCKHookFunction)(Class, SEL, IMP, IMP *);
 static NSMutableDictionary<NSString *, NSString *> *sStatuses;
 static NSMutableSet<NSString *> *sInstalled;
@@ -47,31 +47,21 @@ NSDictionary<NSString *, NSString *> *WCKRuntimeStatuses(void) {
 }
 BOOL WCKEnabled(NSString *feature) {
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
-    return WCKHostIsSupported() &&
-        [WCKRuntimeStatuses()[feature] isEqualToString:@"ready"] &&
-        [snapshot[@"enabled"] boolValue] && [snapshot[feature] boolValue];
+    return [snapshot[@"enabled"] boolValue] && [snapshot[feature] boolValue];
 }
 
+// Runtime compatibility encodings are intentionally not enforced. Keep only
+// class/selector existence so absent targets are skipped without invoking nil.
 BOOL WCKMethodMatches(Class cls, SEL selector, const char *returnType,
                      const char *const *arguments, unsigned int count) {
-    if (!cls || !selector || !returnType || (count && !arguments)) return NO;
-    Method method = class_getInstanceMethod(cls, selector);
-    if (!method || method_getNumberOfArguments(method) != count + 2) return NO;
-    char *type = method_copyReturnType(method);
-    BOOL matches = WCKTypeMatches(type, returnType);
-    free(type);
-    for (unsigned int i = 0; matches && i < count; ++i) {
-        type = method_copyArgumentType(method, i + 2);
-        matches = WCKTypeMatches(type, arguments[i]);
-        free(type);
-    }
-    return matches;
+    (void)returnType; (void)arguments; (void)count;
+    return cls && selector && class_getInstanceMethod(cls, selector) != NULL;
 }
 
 BOOL WCKInstallHook(Class cls, SEL selector, IMP replacement, IMP *original,
                     const char *returnType, const char *const *arguments,
                     unsigned int count) {
-    if (!WCKHostIsSupported() || !replacement || !original ||
+    if (!replacement || !original ||
         !WCKMethodMatches(cls, selector, returnType, arguments, count)) return NO;
     WCKInitRegistry();
     WCKHookFunction hook = (WCKHookFunction)dlsym(RTLD_DEFAULT, "MSHookMessageEx");

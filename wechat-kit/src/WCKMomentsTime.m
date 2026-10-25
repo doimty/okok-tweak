@@ -82,7 +82,7 @@ void WCKInstallMomentsTime(void) {
     if (!WCKMethodMatches(cls, NSSelectorFromString(@"m_dataItem"), "@", NULL, 0) ||
         !WCKMethodMatches(cls, NSSelectorFromString(@"m_timeLabel"), "@", NULL, 0) ||
         !WCKMethodMatches(NSClassFromString(@"WCDataItem"), NSSelectorFromString(@"createtime"), "I", NULL, 0)) {
-        WCKSetModuleStatus(@"momentsTime", @"朋友圈数据或时间字段 ABI 不可用"); return;
+        WCKSetModuleStatus(@"momentsTime", @"朋友圈数据类或时间字段不存在"); return;
     }
     sMomentsCells = [NSHashTable weakObjectsHashTable];
     const char *args[] = {"@", "@"};

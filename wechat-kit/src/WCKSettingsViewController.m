@@ -126,7 +126,6 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
 @interface WCKSettingsViewController ()
 @property (nonatomic, strong) WCKSettings *settings;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *statuses;
-@property (nonatomic) BOOL hostSupported;
 @property (nonatomic, strong) UINavigationBar *standaloneBar;
 - (instancetype)initWithSettings:(WCKSettings *)settings;
 @end
@@ -204,7 +203,6 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
 }
 
 - (void)refreshState {
-    self.hostSupported = WCKHostIsSupported();
     NSDictionary *reported = WCKRuntimeStatuses();
     self.statuses = [reported isKindOfClass:NSDictionary.class] ? [reported copy] : @{};
     [self.tableView reloadData];
@@ -215,12 +213,9 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     return [status isKindOfClass:NSString.class] && [status isEqualToString:@"ready"];
 }
 
-// Re-read the live gates at action time; a stale enabled cell cannot bypass them.
+// Any declared setting may be stored; runtime status is informational only.
 - (BOOL)canEnableKey:(NSString *)key {
-    if (!WCKHostIsSupported()) return NO;
-    if ([key isEqualToString:@"enabled"]) return YES;
-    id status = WCKRuntimeStatuses()[key];
-    return [status isKindOfClass:NSString.class] && [status isEqualToString:@"ready"];
+    return [key isKindOfClass:NSString.class] && self.settings.snapshot[key] != nil;
 }
 
 - (NSString *)statusForRow:(NSDictionary<NSString *, NSString *> *)row {
@@ -234,16 +229,13 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         text = !master ? @"总开关关闭，当前不生效" :
             (feature ? @"已开启，尚未完成效果验收" : @"已接入，当前关闭");
     } else if ([status isKindOfClass:NSString.class] && status.length) {
-        text = [@"未就绪：" stringByAppendingString:status];
+        text = [@"Hook 状态未确认，允许尝试：" stringByAppendingString:status];
     } else {
-        text = @"待实现，未注册";
+        text = @"尚无状态报告，允许尝试";
     }
-    if (!self.hostSupported) text = [text stringByAppendingString:@"；当前宿主不支持"];
     if (row[@"note"]) text = [text stringByAppendingFormat:@"；%@", row[@"note"]];
-    if (row[@"key"] && [self.settings boolForKey:row[@"key"]] &&
-        !(self.hostSupported && [self isReady:row[@"id"]])) {
-        text = [text stringByAppendingString:@"；已存开启，仅可关闭"];
-    }
+    if (row[@"key"] && [self.settings boolForKey:row[@"key"]] && ![self isReady:row[@"id"]])
+        text = [text stringByAppendingString:@"；已保存开启，Hook 状态未确认，仍会尝试运行"];
     return text;
 }
 
@@ -278,11 +270,10 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     if (path.section == 0) {
         BOOL stored = [self.settings boolForKey:@"enabled"];
         cell.textLabel.text = @"启用 WeChatKit";
-        cell.detailTextLabel.text = self.hostSupported ?
-            @"仅已就绪模块可生效；各项仍需分别开启。" : @"当前宿主不支持；已存总开关仍可关闭。";
+        cell.detailTextLabel.text = @"各项独立开启；Hook 状态未确认时也允许尝试。";
         UISwitch *toggle = [[UISwitch alloc] init];
         toggle.on = stored;
-        toggle.enabled = self.hostSupported || stored;
+        toggle.enabled = YES;
         toggle.tag = 0;
         toggle.accessibilityIdentifier = @"wck.switch.enabled";
         toggle.accessibilityLabel = cell.textLabel.text;
@@ -312,7 +303,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     if (sender.isOn && !canEnable) {
         [self refreshState];
         [self showError:[NSError errorWithDomain:@"com.doimty.wechatkit.settings" code:5
-            userInfo:@{NSLocalizedDescriptionKey: @"当前宿主不支持或功能尚未就绪，不能开启。"}]];
+            userInfo:@{NSLocalizedDescriptionKey: @"设置项不存在，无法保存。"}]];
         return;
     }
     NSError *error = nil;
@@ -351,7 +342,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     if ([featureID isEqualToString:@"momentsTime"])
         return @"调整朋友圈列表时间的显示格式，不影响消息与聊天记录。";
     if ([featureID isEqualToString:@"albumSheet"])
-        return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
+        return @"聊天页半屏相册会尝试设置微信实验开关；不同版本可能忽略该开关，行为未保证。";
     if ([featureID isEqualToString:@"corners"])
         return @"按 WCR 的具体功能分别开关：页面卡片、搜索框、输入框、顶栏、工具栏、菜单、聊天内容、系统弹窗、头像和资料卡等互不共用开关。全局卡片参数只作用于卡片路径；组件半径独立保存。源码证据显示 WCR 不是把所有 UIView 按类名粗分。";
     return @"";

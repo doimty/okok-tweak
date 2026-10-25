@@ -26,20 +26,14 @@ def variants(source):
   'mutant-install-default-lock':(replace(source,'Class center = WCKReadContextEntry(&entry);','Class center = (entry = NSSelectorFromString(@"defaultCenter"), NSClassFromString(@"MMServiceCenter"));'),'native_context'),
   'mutant-center-class':(replace(source,'    id center = WCKServiceCenter();',
    '    id center = WCKServiceCenter();\n    if (![center isKindOfClass:NSClassFromString(@"MMServiceCenter")]) return;'),'context_proxy'),
-  'mutant-proxy-ignore-abi':(replace(source,
-   '    NSMethodSignature *signature = [receiver methodSignatureForSelector:selector];',
-   '    if (class_getSuperclass(object_getClass(receiver)) == NSProxy.class) return YES;\n    NSMethodSignature *signature = [receiver methodSignatureForSelector:selector];'),'proxy_bad_count_return'),
   'mutant-no-layout-bind':(replace(source,'WCKBindReadBar(bar); // MMTabBar only;','(void)bar; // MMTabBar only;'),'layout_first'),
   'mutant-no-size-bound':(replace(source,'[raw count] > 5000','[raw count] > 500000'),'large'),
   'mutant-no-account-check':(replace(source,'WCKService(center, @"CMessageMgr") != manager','NO',2),'proxy_replace'),
   'mutant-no-readback':(replace(source,'unsigned int after = ((unsigned int (*)(id,SEL,id))objc_msgSend)(manager, countSelector, name);','unsigned int after = 0;'),'readback'),
  }
 
-cases=['normal','context_proxy','duplicate','replacement','layout_first','legacy','wrong_abi','nil_name','wrong_name','long_name','disabled','nonfirst','wrong_page','hidden','readback','switch_service','cancel','toggle','busy','large','no_begin','proxy_replace','context_replace','proxy_abi_change','proxy_signature_late_throw','snapshot','nil_center','nil_manager','nil_sessions','wrong_manager','wrong_sessions','nil_list','wrong_list','context_signature_throw','proxy_signature_throw']
-cases += ['native_context','native_nil','native_bad_abi','native_throws']
-cases += ['context_bad_'+f for f in ['return','argument','arity','self','selector','nil']]
-for method,fields in [('list',['return','arity','nil']),('count',['return','argument','arity','nil']),('clear',['return','name','from','to','arity','self','selector','nil'])]:
- cases += ['proxy_bad_'+method+'_'+f for f in fields]
+cases=['normal','context_proxy','duplicate','replacement','layout_first','legacy','wrong_abi','nil_name','wrong_name','long_name','disabled','nonfirst','wrong_page','hidden','readback','switch_service','cancel','toggle','busy','large','no_begin','proxy_replace','context_replace','proxy_signature_late_throw','snapshot','nil_center','nil_manager','nil_sessions','wrong_manager','wrong_sessions','nil_list','wrong_list','context_signature_throw','proxy_signature_throw']
+cases += ['native_context','native_nil','native_throws']
 cases += ['throws_'+stage for stage in ['center','service','kind','list','before','clear','after']]
 
 

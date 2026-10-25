@@ -134,7 +134,15 @@ class CornersContract(unittest.TestCase):
                       '@selector(prepareForReuse)']:
             self.assertIn(token, install)
         self.assertIn('abi.frame', model)
-        self.assertIn('hooks.allowed-target', model)
+        self.assertIn('hooks.target-present', model)
+
+    def test_component_families_attempted_without_abi_gate(self):
+        apply = body('WCKCornerApplyToView')
+        refresh = body('WCKRefreshCorners')
+        self.assertNotIn('WCKEnableUnverifiedComponentFamilies', source)
+        self.assertNotIn('WCKMethodMatches', apply)
+        self.assertIn('WCKCornerVisitViews();', refresh)
+        self.assertIn('visited < 4000', source)
 
     def test_settings_keys_and_controls_match(self):
         for key in ['corners', 'globalCornerRadius', 'globalCornerMargin', 'globalCornerSpacing',
@@ -156,7 +164,7 @@ class CornersContract(unittest.TestCase):
         self.assertNotIn('layoutIfNeeded', refresh)
         self.assertNotIn('beginUpdates', refresh)
         self.assertIn('WCKCornerVisitViews', refresh)
-        self.assertIn('WCKEnableUnverifiedComponentFamilies', refresh)
+        self.assertNotIn('WCKEnableUnverifiedComponentFamilies', refresh)
         self.assertIn('visited < 4000', source)
         self.assertIn('refresh.registered', model)
 

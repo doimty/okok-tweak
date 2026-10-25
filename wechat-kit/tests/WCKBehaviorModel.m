@@ -23,11 +23,9 @@ static WCKSettings *modelStore;
 BOOL WCKHostIsSupported(void){return supported;}
 NSDictionary *WCKRuntimeStatuses(void){return statuses.copy;}
 void WCKSetModuleStatus(NSString *k,NSString *v){statuses[k]=v;}
-BOOL WCKEnabled(NSString *k){NSDictionary*s=WCKSettings.shared.snapshot;return supported&&[statuses[k]isEqual:@"ready"]&&[s[@"enabled"]boolValue]&&[s[k]boolValue];}
+BOOL WCKEnabled(NSString *k){NSDictionary*s=WCKSettings.shared.snapshot;return [s[@"enabled"]boolValue]&&[s[k]boolValue];}
 BOOL WCKMethodMatches(Class c,SEL s,const char*r,const char*const*a,unsigned n){
- Method m=c?class_getInstanceMethod(c,s):NULL;if(!m||method_getNumberOfArguments(m)!=n+2)return NO;
- char*t=method_copyReturnType(m);BOOL ok=WCKTypeMatches(t,r);free(t);
- for(unsigned i=0;ok&&i<n;i++){t=method_copyArgumentType(m,i+2);ok=WCKTypeMatches(t,a[i]);free(t);}return ok;
+ (void)r;(void)a;(void)n;return c&&s&&class_getInstanceMethod(c,s)!=NULL;
 }
 BOOL WCKInstallHook(Class c,SEL s,IMP imp,IMP*old,const char*r,const char*const*a,unsigned n){
  if((rejectAdjust&&s==NSSelectorFromString(@"adjustTimeLabelLine"))||!WCKMethodMatches(c,s,r,a,n))return NO;
@@ -162,12 +160,12 @@ int main(int argc,const char **argv){@autoreleasepool{
  Method a=class_getClassMethod(WCKSettings.class,@selector(shared));Method b=class_getClassMethod(WCKSettings.class,@selector(modelShared));method_setImplementation(a,method_getImplementation(b));
  rejectAdjust=[mode isEqual:@"missing_adjust"];WCKInstallKeyboard();WCKInstallMomentsTime();WCKInstallAlbumSheet();
  CHECK([statuses[@"keyboardSwipe"]isEqual:@"ready"]);
- for(id v in @[@"8.0.69",@"8.0.75",@"8.0.9",@"Default",@"8.0.76beta",@"8..76",@"8.0.-1",@76,NSNull.null])CHECK(!WCKAlbumVersionSupported(v));
- for(NSString*v in @[@"8.0.76",@"8.0.100",@"8.1.0",@"9.0.0",@"8.0.76.1"])CHECK(WCKAlbumVersionSupported(v));
  if([mode hasPrefix:@"album_"]){
-  CHECK(![statuses[@"albumSheet"]isEqual:@"ready"]);CHECK(sOriginalAlbumExpt==NULL);
-  ExptService*unchanged=[ExptService new];CHECK(![unchanged getExpt:@"clicfg_chat_album_pagesheet_mode" withBoolDef:NO]);
-  CHECK(experimentCalls==1);printf("BEHAVIOR album prerequisite rejected (display version ignored)\n");return 0;
+  CHECK([statuses[@"albumSheet"]isEqual:@"ready"]);
+  CHECK(sOriginalAlbumExpt!=NULL);
+  ExptService*trial=[ExptService new];set(@"enabled",@YES);set(@"albumSheet",@YES);
+  CHECK([trial getExpt:@"clicfg_chat_album_pagesheet_mode" withBoolDef:NO]);
+  CHECK(experimentCalls==1);printf("BEHAVIOR album hook attempted without version gate\n");return 0;
  }
  CHECK([statuses[@"albumSheet"]isEqual:@"ready"]);
  if(rejectAdjust){CHECK(![statuses[@"momentsTime"]isEqual:@"ready"]);printf("BEHAVIOR missing adjust rejected\n");return 0;}
@@ -228,6 +226,6 @@ int main(int argc,const char **argv){@autoreleasepool{
  set(@"momentsTime",@YES);WCDataItem*zero=[WCDataItem new];[cell updateWithDataItem:zero actionAreaVM:nil];CHECK([cell.m_timeLabel.text isEqual:@"host relative time"]);
  [cell updateWithDataItem:item actionAreaVM:nil];CHECK(cell.m_timeLabel.text.length==4);
  cell.m_timeLabel.text=@"another plugin changed this";set(@"momentsTime",@NO);CHECK([cell.m_timeLabel.text isEqual:@"another plugin changed this"]);
- CHECK(!WCKMomentsFormat(0));supported=NO;set(@"momentsTime",@YES);[cell updateWithDataItem:item actionAreaVM:nil];CHECK([cell.m_timeLabel.text isEqual:@"host relative time"]);
+ CHECK(!WCKMomentsFormat(0));supported=NO;set(@"momentsTime",@YES);[cell updateWithDataItem:item actionAreaVM:nil];CHECK([cell.m_timeLabel.text isEqual:WCKMomentsFormat(item.createtime)]);
  printf("BEHAVIOR MODEL %u checks PASS (Foundation/model, not UIKit/device)\n",checks);
 }return 0;}

@@ -161,6 +161,28 @@ static NSDictionary<NSString *, id> *WCKLoad(NSURL *fileURL) {
         id canonical = WCKValidatedValue(key, plist[key]);
         if (canonical) values[key] = canonical;
     }
+    // Preserve the user's previous alpha6 card configuration when the schema
+    // moves from corners* keys to WCR's globalCorner*/page keys. New-format
+    // values always win over the legacy aliases.
+    NSArray<NSArray<NSString *> *> *legacyKeys = @[
+        @[@"cornersRadius", @"globalCornerRadius"],
+        @[@"cornersMargin", @"globalCornerMargin"],
+        @[@"cornersSpacing", @"globalCornerSpacing"],
+        @[@"cornersStrokeWidth", @"globalCornerStroke"],
+        @[@"cornersFill", @"globalCornerFill"],
+        @[@"cornersStrokeColor", @"globalCornerStrokeColor"],
+        @[@"cornersHome", @"mainFrameCornerEnabled"],
+        @[@"cornersContacts", @"homepageCornerEnabled"],
+        @[@"cornersDiscover", @"discoverPageCornerEnabled"],
+        @[@"cornersMe", @"myPageCornerEnabled"],
+        @[@"cornersProfile", @"friendProfileCornerEnabled"]
+    ];
+    for (NSArray<NSString *> *pair in legacyKeys) {
+        NSString *oldKey = pair[0], *newKey = pair[1];
+        if (plist[newKey] != nil || plist[oldKey] == nil) continue;
+        id canonical = WCKValidatedValue(newKey, plist[oldKey]);
+        if (canonical) values[newKey] = canonical;
+    }
     return [values copy];
 }
 

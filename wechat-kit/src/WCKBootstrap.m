@@ -2,7 +2,6 @@
 #import "WCKRuntime.h"
 
 __attribute__((constructor)) static void WCKStart(void) {
-    if (!WCKHostIsSupported()) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         // Entry is initialized first and has no feature/master-switch dependency.
         WCKInstallEntryPoints();

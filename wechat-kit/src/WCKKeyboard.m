@@ -98,13 +98,13 @@ static void WCKKeyboardWillEndDragging(UIViewController *vc, SEL cmd,
 void WCKInstallKeyboard(void) {
     Class cls = NSClassFromString(@"BaseMsgContentViewController");
     if (!WCKMethodMatches(cls, NSSelectorFromString(@"toolView"), "@", NULL, 0)) {
-        WCKSetModuleStatus(@"keyboardSwipe", @"聊天输入栏 getter ABI 不可用"); return;
+        WCKSetModuleStatus(@"keyboardSwipe", @"聊天输入栏 getter 不存在"); return;
     }
     const char *args[] = {"@", @encode(CGPoint), @encode(CGPoint *)};
     BOOL installed = WCKInstallHook(cls,
         NSSelectorFromString(@"scrollViewWillEndDragging:withVelocity:targetContentOffset:"),
         (IMP)WCKKeyboardWillEndDragging, (IMP *)&sOriginalKeyboardDrag, "v", args, 3);
-    WCKSetModuleStatus(@"keyboardSwipe", installed && sOriginalKeyboardDrag ? @"ready" : @"聊天滚动回调 ABI 不可用");
+    WCKSetModuleStatus(@"keyboardSwipe", installed && sOriginalKeyboardDrag ? @"ready" : @"聊天滚动回调或 Hook API 不存在");
     if (installed) [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
         object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
             ++sKeyboardEpoch;
