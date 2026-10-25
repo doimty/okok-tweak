@@ -7,7 +7,7 @@ if sys.platform!='darwin':
     print('SKIP: native Foundation runtime requires macOS; not counted as passed')
     raise SystemExit(77)
 cases=['normal','duplicate','preserve_neighbor','existing','absent_then_late','nil_then_ready',
-       'invalid_list','unreadable_model','readback_failure','partial_throw','unsupported','background','wrong_abi']
+       'invalid_list','unreadable_model','readback_failure','partial_throw','host_probe_false','background','wrong_abi']
 source=(root/'src/WCKEntryRegistry.m').read_text()
 call='((void (*)(id, SEL, id, id, id))objc_msgSend)(hub, registration,\n            @"WeChatKit", @"0.1.0-alpha6", WCKControllerName);'
 assert source.count(call)==1

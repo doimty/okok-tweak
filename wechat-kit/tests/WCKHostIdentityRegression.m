@@ -97,8 +97,10 @@ int main(int argc,const char *argv[]) { @autoreleasepool {
     IMP old=method_setImplementation(mainMethod,(IMP)fixtureMainBundle);
     @try {
         CHECK(WCKHostIsSupported()==expected);
-        CHECK(WCKRegisterPluginEntry()==expected);
-        CHECK(WCPluginsMgr.sharedInstance.registrations==(expected?1u:0u));
+        // Registration is deliberately decoupled from the host probe: it must succeed even
+        // when the identity check fails, so the plugin entry never depends on host detection.
+        CHECK(WCKRegisterPluginEntry());
+        CHECK(WCPluginsMgr.sharedInstance.registrations==1);
         if (retry) {writeIdentity(validIdentity());CHECK(WCKHostIsSupported());CHECK(WCKRegisterPluginEntry());expected=YES;}
         if ([test isEqual:@"concurrent"]) {
             dispatch_apply(32,dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^(size_t n){CHECK(WCKHostIsSupported());});

@@ -91,8 +91,9 @@ int main(int argc,const char *argv[]) { @autoreleasepool {
         } else if ([test isEqual:@"partial_throw"]) {
             throwAfterWrite=YES; CHECK(!WCKRegisterPluginEntry());
             throwAfterWrite=NO; CHECK(WCKRegisterPluginEntry()); CHECK(registrations==1);
-        } else if ([test isEqual:@"unsupported"]) {
-            supported=NO; CHECK(!WCKRegisterPluginEntry()); CHECK(!registrations);
+        } else if ([test isEqual:@"host_probe_false"]) {
+            // Registration no longer consults the host probe: a false probe must still register.
+            supported=NO; CHECK(WCKRegisterPluginEntry()); CHECK(registrations==1);
         } else if ([test isEqual:@"background"]) {
             dispatch_semaphore_t done=dispatch_semaphore_create(0);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), ^{
