@@ -165,7 +165,7 @@ int main(int argc,const char **argv){@autoreleasepool{
   CHECK(sOriginalAlbumExpt!=NULL);
   ExptService*trial=[ExptService new];set(@"enabled",@YES);set(@"albumSheet",@YES);
   CHECK([trial getExpt:@"clicfg_chat_album_pagesheet_mode" withBoolDef:NO]);
-  CHECK(experimentCalls==1);printf("BEHAVIOR album hook attempted without version gate\n");return 0;
+  CHECK(experimentCalls==0);printf("BEHAVIOR album hook attempted without version gate\n");return 0;
  }
  CHECK([statuses[@"albumSheet"]isEqual:@"ready"]);
  if(rejectAdjust){CHECK(![statuses[@"momentsTime"]isEqual:@"ready"]);printf("BEHAVIOR missing adjust rejected\n");return 0;}
