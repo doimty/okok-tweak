@@ -596,7 +596,7 @@ static void abi(void) {
                [sel isEqual:@"layoutSubviews"])
             : ([sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
                [sel isEqual:@"prepareForReuse"]);
-        CHECK_ID("hooks.allowed-target",(cellTarget || verifiedTarget) && allowedSelector);
+        CHECK_ID("hooks.allowed-target",(cellTarget || verifiedTarget || viewTarget) && allowedSelector);
     }
 }
 int main(int argc, char **argv) {
