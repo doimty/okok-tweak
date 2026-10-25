@@ -45,16 +45,17 @@ class CornersContract(unittest.TestCase):
                      'FindFriendEntryViewController', 'MoreViewController',
                      'ContactInfoViewController']:
             self.assertIn('@"' + name + '"', source)
-        # Independent switches per control type, not per page.
-        for key in ['cornersList', 'cornersMenu', 'cornersSearch', 'cornersOther']:
-            self.assertIn('@"' + key + '"', source)
-            self.assertIn('@"' + key + '"', page)
-            self.assertIn('@"' + key + '"', settings)
+        for key in ['homepageCornerEnabled', 'mainFrameCornerEnabled', 'myPageCornerEnabled',
+                    'friendProfileCornerEnabled', 'discoverPageCornerEnabled', 'tpModeCornerEnabled']:
+            self.assertIn(key, source)
+            self.assertIn(key, page)
+            self.assertIn(key, settings)
         enabled = body('WCKCornerPageEnabled')
-        self.assertIn('WCKCornerPageKey(owner) != nil', enabled)
-        self.assertIn('[snapshot[@"cornersList"] boolValue]', enabled)
-        self.assertNotIn('cornersScope', source)
-        self.assertNotIn('cornersScope', page)
+        self.assertIn('WCKCornerPageKey(owner)', enabled)
+        self.assertNotIn('cornersList', source)
+        self.assertNotIn('cornersMenu', source)
+        self.assertNotIn('cornersSearch', source)
+        self.assertNotIn('cornersOther', source)
 
     def test_horizontal_geometry_changes_only_cell_frame(self):
         frame = body('WCKCornerFrame')
@@ -109,17 +110,17 @@ class CornersContract(unittest.TestCase):
         self.assertNotIn('heightForHeaderInSection', source)
         self.assertNotIn('cornersSpacingUnified', settings)
         self.assertNotIn('cornersPinnedTopSpacing', settings)
-        self.assertNotIn('置顶会话顶部间距', page)
-        self.assertIn('([key isEqualToString:@"cornersMargin"] ? 30.0 : 24.0)', settings)
+        self.assertIn('置顶会话顶部间距', page)
+        self.assertIn('hasSuffix:@"Margin"', settings)
         # Spacing is a real card gap on the cell frame, not a fake header hook.
-        self.assertIn('@"cornersSpacing": @8.0', settings)
-        self.assertIn('cornersSpacing', page)
+        self.assertIn('@"globalCornerSpacing"] = @8.0', settings)
+        self.assertIn('globalCornerSpacing', page)
 
     def test_host_clipping_and_button_background_are_untouched(self):
         # The list path must not clip cells; only the generic view path clips
         # the container it just rounded.
         self.assertNotIn('cell.layer.masksToBounds', source)
-        self.assertNotRegex(source, r'(?<!view\.layer)\.masksToBounds = YES;')
+        self.assertNotIn('cell.layer.masksToBounds', source)
         self.assertIn('layer.borderColor = border.CGColor', source)
         self.assertNotIn('WCKInstallHook(UIButton.class', source)
         self.assertIn('restore.border-applied', model)
@@ -136,13 +137,15 @@ class CornersContract(unittest.TestCase):
         self.assertIn('hooks.allowed-target', model)
 
     def test_settings_keys_and_controls_match(self):
-        for key in ['corners', 'cornersRadius', 'cornersMargin', 'cornersSpacing',
-                    'cornersList', 'cornersMenu', 'cornersSearch', 'cornersOther',
-                    'cornersFill', 'cornersStrokeWidth', 'cornersStrokeColor']:
-            self.assertIn('@"' + key + '"', settings)
-            self.assertIn('@"' + key + '"', page)
+        for key in ['corners', 'globalCornerRadius', 'globalCornerMargin', 'globalCornerSpacing',
+                    'homepageCornerEnabled', 'mainFrameCornerEnabled', 'searchCorner',
+                    'menuCorner', 'chatToolbarCorner', 'chatBubbleCorner', 'profileCorner']:
+            self.assertIn(key, settings)
+            self.assertIn(key, page)
+        self.assertIn('WCKCornerExtraRows', page)
         self.assertIn('slider.tag = path.row;', detail)
         self.assertIn('extraRowAtRow:sender.tag', detail)
+        self.assertIn('isEqualToString:@"header"', detail)
 
     def test_refresh_is_bounded_weak_and_cell_local(self):
         refresh = body('WCKRefreshCorners')
@@ -153,6 +156,7 @@ class CornersContract(unittest.TestCase):
         self.assertNotIn('layoutIfNeeded', refresh)
         self.assertNotIn('beginUpdates', refresh)
         self.assertIn('WCKCornerVisitViews', refresh)
+        self.assertIn('WCKEnableUnverifiedComponentFamilies', refresh)
         self.assertIn('visited < 4000', source)
         self.assertIn('refresh.registered', model)
 

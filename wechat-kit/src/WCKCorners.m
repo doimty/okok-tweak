@@ -85,112 +85,293 @@ static UIViewController *WCKCornerOwner(UITableView *table) {
 }
 static NSString *WCKCornerPageKey(UIViewController *owner) {
     static NSArray<NSString *> *names;
+    static NSArray<NSString *> *keys;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         names = @[@"NewMainFrameViewController", @"ContactsViewController",
                   @"FindFriendEntryViewController", @"MoreViewController",
                   @"ContactInfoViewController"];
+        keys = @[@"mainFrameCornerEnabled", @"homepageCornerEnabled",
+                 @"discoverPageCornerEnabled", @"myPageCornerEnabled",
+                 @"friendProfileCornerEnabled", @"tpModeCornerEnabled"];
     });
     for (NSUInteger i = 0; i < names.count; ++i) {
         Class cls = NSClassFromString(names[i]);
-        if (cls && [owner isKindOfClass:cls]) return @"list";
+        if (cls && [owner isKindOfClass:cls]) return keys[i];
     }
     return nil;
 }
 static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot) {
-    // Unknown pages and our own settings pages never enter the card path; the
-    // generic view path below has its own exclusions.
-    return WCKCornerPageKey(owner) != nil && [snapshot[@"cornersList"] boolValue];
+    NSString *key = WCKCornerPageKey(owner);
+    if (!key) return NO;
+    return [snapshot[key] boolValue];
 }
 // ---- generic view corners: menus, search fields and other painted containers
 
+static const BOOL WCKEnableUnverifiedComponentFamilies = NO;
 static void (*sViewDidMoveToWindow)(id, SEL);
 static void (*sViewSetBackgroundColor)(id, SEL, UIColor *);
+static void (*sViewLayoutSubviews)(id, SEL);
+static void (*sAvatarLayoutSubviews)(id, SEL);
+static void (*sProfileAvatarLayoutSubviews)(id, SEL);
+static void (*sFakeAvatarLayoutSubviews)(id, SEL);
+static void (*sMsgNavBarLayoutSubviews)(id, SEL);
+static void (*sNewMsgNavBarLayoutSubviews)(id, SEL);
+static void (*sTabBarLayoutSubviews)(id, SEL);
 static char sCornerViewMarkerKey;
+static char sVerifiedLayerStateKey;
 
-static NSArray<NSString *> *WCKCornerViewExcludedClasses(void) {
-    static NSArray *names;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        names = @[@"UIImageView", @"UILabel", @"UITextView", @"UITextField",
-                  @"UIVisualEffectView", @"UIScrollView", @"UITableView", @"UICollectionView",
-                  @"UIWebView", @"WKWebView", @"UINavigationBar", @"UITabBar", @"UIToolbar",
-                  @"UIWindow", @"UIInputSetContainerView", @"UIInputView", @"UIPickerView",
-                  @"UIDatePicker", @"UIActivityIndicatorView", @"UIProgressView",
-                  @"UISwitch", @"UISlider", @"UISegmentedControl"];
-    });
-    return names;
-}
-static BOOL WCKCornerViewExcluded(Class cls) {
-    for (NSString *name in WCKCornerViewExcludedClasses()) {
-        Class excluded = NSClassFromString(name);
-        if (excluded && [cls isSubclassOfClass:excluded]) return YES;
-    }
-    return [NSStringFromClass(cls) hasPrefix:@"WCK"];   // never touch our own UI
-}
 static BOOL WCKCornerNameHas(UIView *view, NSString *needle, NSUInteger depth) {
     UIView *current = view;
     for (NSUInteger i = 0; current && i <= depth; ++i, current = current.superview)
-        if ([NSStringFromClass(current.class) rangeOfString:needle].location != NSNotFound) return YES;
+        if ([NSStringFromClass(current.class) rangeOfString:needle options:NSCaseInsensitiveSearch].location != NSNotFound) return YES;
     return NO;
 }
-static NSString *WCKCornerCategory(UIView *view) {
-    if (WCKCornerNameHas(view, @"Search", 3)) return @"cornersSearch";
-    if (WCKCornerNameHas(view, @"Menu", 2) || WCKCornerNameHas(view, @"Popover", 2) ||
-        WCKCornerNameHas(view, @"Sheet", 2) || WCKCornerNameHas(view, @"Alert", 3))
-        return @"cornersMenu";
-    return @"cornersOther";
+static NSString *WCKCornerFamilyForView(UIView *view) {
+    // Specific WCR-like paths win over generic class-name fallbacks.
+    if (WCKCornerNameHas(view, @"Search", 4) || WCKCornerNameHas(view, @"FTS", 2)) return @"searchCorner";
+    if (WCKCornerNameHas(view, @"Keyboard", 3) || WCKCornerNameHas(view, @"InputSet", 3)) return @"imeKeyboardCorner";
+    if (WCKCornerNameHas(view, @"PlusMenu", 4) || WCKCornerNameHas(view, @"AddMenu", 4)) return @"plusMenuCorner";
+    if (WCKCornerNameHas(view, @"SwipeMenu", 4) || WCKCornerNameHas(view, @"ContextualAction", 4)) return @"mainFrameSwipeMenuCorner";
+    if (WCKCornerNameHas(view, @"ActionSheet", 4) || WCKCornerNameHas(view, @"Menu", 3) ||
+        WCKCornerNameHas(view, @"Popover", 3)) return @"menuCorner";
+    if (WCKCornerNameHas(view, @"Alert", 4) || WCKCornerNameHas(view, @"Popup", 4)) return @"systemPopupCorner";
+    if (WCKCornerNameHas(view, @"ChatToolbar", 4)) return @"chatToolbarCorner";
+    if (WCKCornerNameHas(view, @"Toolbar", 3)) return @"toolbarCorner";
+    if (WCKCornerNameHas(view, @"Topbar", 3) || WCKCornerNameHas(view, @"NavigationBar", 3)) return @"topbarCorner";
+    if (WCKCornerNameHas(view, @"Emoji", 3) || WCKCornerNameHas(view, @"Emoticon", 3)) return @"emojiCorner";
+    if (WCKCornerNameHas(view, @"SystemMessage", 4)) return @"systemMessageCorner";
+    if (WCKCornerNameHas(view, @"Notice", 4)) return @"systemNoticeCorner";
+    if (WCKCornerNameHas(view, @"Bubble", 4)) return @"chatBubbleCorner";
+    if (WCKCornerNameHas(view, @"ImageMessage", 4) || WCKCornerNameHas(view, @"ImageContent", 4)) return @"chatImageCorner";
+    if (WCKCornerNameHas(view, @"FileMessage", 4) || WCKCornerNameHas(view, @"FileContent", 4)) return @"chatFileCorner";
+    if (WCKCornerNameHas(view, @"Location", 4)) return @"chatLocationCorner";
+    if (WCKCornerNameHas(view, @"Time", 4)) return @"chatTimeRoundCorner";
+    if (WCKCornerNameHas(view, @"Refer", 4) || WCKCornerNameHas(view, @"Quote", 4)) return @"msgReferCorner";
+    if (WCKCornerNameHas(view, @"VoiceTranslate", 4) || WCKCornerNameHas(view, @"Translate", 4)) return @"voiceTranslateCorner";
+    if (WCKCornerNameHas(view, @"Finder", 4)) return @"finderCorner";
+    if (WCKCornerNameHas(view, @"Service", 4) || WCKCornerNameHas(view, @"Brand", 4)) return @"serviceCorner";
+    if (WCKCornerNameHas(view, @"Moment", 4) || WCKCornerNameHas(view, @"Sns", 4)) return @"momentCorner";
+    if (WCKCornerNameHas(view, @"Avatar", 4) || WCKCornerNameHas(view, @"HeadImage", 4)) return @"avatarCorner";
+    if (WCKCornerNameHas(view, @"Profile", 4) || WCKCornerNameHas(view, @"ContactInfo", 4)) return @"profileCorner";
+    if (WCKCornerNameHas(view, @"Send", 4) || WCKCornerNameHas(view, @"Publish", 4)) return @"sendPublishButtonCorner";
+    return @"otherCorner";
 }
-static BOOL WCKCornerViewPaints(UIView *view) {
+static BOOL WCKCornerViewExcluded(UIView *view) {
+    Class cls = view.class;
+    NSString *family = WCKCornerFamilyForView(view);
+    for (NSString *name in @[@"UILabel", @"UIVisualEffectView", @"UIScrollView",
+                             @"UITableView", @"UICollectionView", @"UIWebView", @"WKWebView",
+                             @"UIWindow", @"UIPickerView", @"UIDatePicker", @"UIActivityIndicatorView",
+                             @"UIProgressView", @"UISwitch", @"UISlider", @"UISegmentedControl"]) {
+        Class excluded = NSClassFromString(name);
+        if (excluded && [cls isSubclassOfClass:excluded]) return YES;
+    }
+    Class imageView = NSClassFromString(@"UIImageView");
+    if (imageView && [cls isSubclassOfClass:imageView] &&
+        ![family isEqualToString:@"avatarCorner"] && ![family isEqualToString:@"chatImageCorner"]) return YES;
+    // Text fields/text views are eligible only when their own path is input/search.
+    Class textField = NSClassFromString(@"UITextField");
+    Class textView = NSClassFromString(@"UITextView");
+    if ((textField && [cls isSubclassOfClass:textField]) || (textView && [cls isSubclassOfClass:textView])) {
+        if (![family isEqualToString:@"inputCorner"] && ![family isEqualToString:@"searchCorner"]) return YES;
+    }
+    if (([NSStringFromClass(cls) hasPrefix:@"UIInputSet"] || [NSStringFromClass(cls) hasPrefix:@"UIInputView"]) &&
+        ![family isEqualToString:@"imeKeyboardCorner"]) return YES;
+    return [NSStringFromClass(cls) hasPrefix:@"WCK"];
+}
+static BOOL WCKCornerViewPaints(UIView *view, NSString *family) {
     UIColor *colour = view.backgroundColor;
-    if (!colour) return NO;
+    if (!colour) {
+        if (![family isEqualToString:@"avatarCorner"] && ![family isEqualToString:@"chatImageCorner"]) return NO;
+        if (![view respondsToSelector:@selector(image)]) return NO;
+        @try { return [view valueForKey:@"image"] != nil; } @catch (__unused NSException *exception) { return NO; }
+    }
     CGFloat alpha = 1;
-    if (![colour getWhite:NULL alpha:&alpha] &&
-        ![colour getRed:NULL green:NULL blue:NULL alpha:&alpha]) return NO;
+    if (![colour getWhite:NULL alpha:&alpha] && ![colour getRed:NULL green:NULL blue:NULL alpha:&alpha]) return NO;
     return alpha > 0.01;
 }
 static void WCKCornerClearView(UIView *view) {
-    if (!objc_getAssociatedObject(view, &sCornerViewMarkerKey)) return;
-    view.layer.cornerRadius = 0;
-    view.layer.masksToBounds = NO;
+    NSDictionary *saved = objc_getAssociatedObject(view, &sCornerViewMarkerKey);
+    if (![saved isKindOfClass:NSDictionary.class]) return;
+    if (view.layer.cornerRadius == [saved[@"radius"] doubleValue])
+        view.layer.cornerRadius = [saved[@"hostRadius"] doubleValue];
+    if (view.layer.masksToBounds == [saved[@"appliedMasks"] boolValue])
+        view.layer.masksToBounds = [saved[@"hostMasks"] boolValue];
+    if (WCKCornerObjectsEqual(view.layer.cornerCurve, saved[@"appliedCurve"]))
+        view.layer.cornerCurve = saved[@"hostCurve"];
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WCKCornerApplyToView(UIView *view) {
     if (!NSThread.isMainThread || ![view isKindOfClass:UIView.class]) return;
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
-    if (!WCKEnabled(@"corners") || WCKCornerViewExcluded(view.class) ||
+    if (!WCKEnabled(@"corners") || WCKCornerViewExcluded(view) ||
         [view isKindOfClass:UITableViewCell.class] || [view isKindOfClass:UICollectionViewCell.class] ||
-        view.window == nil || view.hidden || view.alpha < 0.01) {
-        WCKCornerClearView(view); return;
+        view.window == nil || view.hidden || view.alpha < 0.01) { WCKCornerClearView(view); return; }
+    NSString *family = WCKCornerFamilyForView(view);
+    BOOL enabled = [snapshot[[family stringByAppendingString:@"Enabled"]] boolValue];
+    // The reverse-engineered source proves most WCR keys exist, but does not
+    // prove their WeChat host binding. Keep speculative UIView classification
+    // opt-in until a host anchor or runtime A/B confirms it.
+    if (!WCKEnableUnverifiedComponentFamilies &&
+        ![family isEqualToString:@"avatarCorner"] &&
+        ![family isEqualToString:@"chatImageCorner"]) enabled = NO;
+    NSMutableDictionary *saved = [objc_getAssociatedObject(view, &sCornerViewMarkerKey) mutableCopy];
+    if (saved && (view.layer.cornerRadius != [saved[@"radius"] doubleValue] ||
+                  view.layer.masksToBounds != [saved[@"appliedMasks"] boolValue] ||
+                  !WCKCornerObjectsEqual(view.layer.cornerCurve, saved[@"appliedCurve"]))) {
+        // The host changed the view after our pass. Its new style wins; do not
+        // overwrite it or restore the old snapshot later.
+        WCKCornerClearView(view); saved = nil;
     }
-    BOOL on = [snapshot[WCKCornerCategory(view)] boolValue];
-    BOOL marked = objc_getAssociatedObject(view, &sCornerViewMarkerKey) != nil;
-    // Never overwrite a radius the host set itself; only views that are flat
-    // before we touch them are ours to round.
-    if (!on || !WCKCornerViewPaints(view) || (!marked && view.layer.cornerRadius > 0.01)) {
-        WCKCornerClearView(view); return;
-    }
-    CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"cornersRadius", 12, 24);
+    if (!enabled || !WCKCornerViewPaints(view, family)) { WCKCornerClearView(view); return; }
+    if (!saved && view.layer.cornerRadius > 0.01) return; // host-owned geometry
+    NSString *radiusFamily = ([family isEqualToString:@"chatFileCorner"] ||
+        [family isEqualToString:@"chatLocationCorner"]) ? @"chatImageCorner" : family;
+    CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, [radiusFamily stringByAppendingString:@"Radius"],
+                                               [snapshot[@"globalCornerRadius"] doubleValue], 24);
     radius = MIN(radius, MIN(view.bounds.size.width, view.bounds.size.height) / 2.0);
     if (radius <= 0.5) { WCKCornerClearView(view); return; }
+    if (!saved) saved = [@{ @"hostRadius": @(view.layer.cornerRadius), @"hostMasks": @(view.layer.masksToBounds),
+                            @"hostCurve": view.layer.cornerCurve ?: @"", @"radius": @(radius),
+                            @"appliedMasks": @YES, @"appliedCurve": kCACornerCurveContinuous } mutableCopy];
+    else saved[@"radius"] = @(radius);
     view.layer.cornerRadius = radius;
     view.layer.cornerCurve = kCACornerCurveContinuous;
-    // Only rounded because it paints its own background, so clipping its
-    // content is what makes the corners visible.
     view.layer.masksToBounds = YES;
-    objc_setAssociatedObject(view, &sCornerViewMarkerKey, @(radius), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WCKCornerViewDidMove(id view, SEL cmd) {
     sViewDidMoveToWindow(view, cmd);
     if (![view isKindOfClass:UIView.class] || !NSThread.isMainThread) return;
     WCKCornerApplyToView(view);
-    // Bounds are often still zero at didMoveToWindow; retry after layout.
     __weak UIView *weakView = view;
     dispatch_async(dispatch_get_main_queue(), ^{ WCKCornerApplyToView(weakView); });
 }
 static void WCKCornerViewSetBackground(id view, SEL cmd, UIColor *colour) {
     sViewSetBackgroundColor(view, cmd, colour);
     if (colour) WCKCornerApplyToView(view);
+}
+static void WCKCornerViewLayout(id view, SEL cmd) {
+    sViewLayoutSubviews(view, cmd);
+    WCKCornerApplyToView((UIView *)view);
+}
+static void WCKVerifiedLayerRestore(UIView *view) {
+    NSDictionary *saved = objc_getAssociatedObject(view, &sVerifiedLayerStateKey);
+    if (![saved isKindOfClass:NSDictionary.class]) return;
+    if (fabs(view.layer.cornerRadius - [saved[@"appliedRadius"] doubleValue]) < 0.01)
+        view.layer.cornerRadius = [saved[@"hostRadius"] doubleValue];
+    if (view.layer.maskedCorners == [saved[@"appliedMask"] unsignedIntegerValue])
+        view.layer.maskedCorners = [saved[@"hostMask"] unsignedIntegerValue];
+    if (view.layer.masksToBounds == [saved[@"appliedClips"] boolValue])
+        view.layer.masksToBounds = [saved[@"hostClips"] boolValue];
+    if (WCKCornerObjectsEqual(view.layer.cornerCurve, kCACornerCurveContinuous)) {
+        id curve = saved[@"hostCurve"];
+        view.layer.cornerCurve = curve == [NSNull null] ? nil : curve;
+    }
+    objc_setAssociatedObject(view, &sVerifiedLayerStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static BOOL WCKCornerApplyLayerFamily(UIView *view, NSString *family, NSDictionary *snapshot) {
+    NSString *enabledKey = [family stringByAppendingString:@"Enabled"];
+    NSString *radiusKey = [family stringByAppendingString:@"Radius"];
+    NSUInteger mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner |
+        kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
+    if ([family isEqualToString:@"topbarCorner"] && [snapshot[@"topbarCornerTopFlatEnabled"] boolValue])
+        mask = kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
+    if ([family isEqualToString:@"toolbarCorner"] && [snapshot[@"toolbarCornerBottomFlatEnabled"] boolValue])
+        mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
+    NSDictionary *saved = objc_getAssociatedObject(view, &sVerifiedLayerStateKey);
+    if (saved && (fabs(view.layer.cornerRadius - [saved[@"appliedRadius"] doubleValue]) >= 0.01 ||
+                  view.layer.maskedCorners != [saved[@"appliedMask"] unsignedIntegerValue] ||
+                  view.layer.masksToBounds != [saved[@"appliedClips"] boolValue] ||
+                  !WCKCornerObjectsEqual(view.layer.cornerCurve, kCACornerCurveContinuous))) {
+        // The host changed the layer after our pass. Its value wins.
+        objc_setAssociatedObject(view, &sVerifiedLayerStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        saved = nil;
+    }
+    if (!snapshot || ![snapshot[enabledKey] boolValue]) {
+        WCKVerifiedLayerRestore(view); return NO;
+    }
+    CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, radiusKey,
+        [snapshot[@"globalCornerRadius"] doubleValue], 24);
+    CGFloat limit = MIN(view.bounds.size.width, view.bounds.size.height) / 2.0;
+    if (radius <= 0.5 || limit <= 0.5) { WCKVerifiedLayerRestore(view); return NO; }
+    radius = MIN(radius, limit);
+    if (!saved) {
+        saved = @{ @"hostRadius": @(view.layer.cornerRadius),
+            @"hostMask": @(view.layer.maskedCorners),
+            @"hostClips": @(view.layer.masksToBounds),
+            @"hostCurve": view.layer.cornerCurve ?: [NSNull null],
+            @"appliedRadius": @(radius), @"appliedMask": @(mask),
+            @"appliedClips": @YES };
+    } else {
+        NSMutableDictionary *updated = [saved mutableCopy];
+        updated[@"appliedRadius"] = @(radius); updated[@"appliedMask"] = @(mask);
+        saved = updated;
+    }
+    view.layer.cornerRadius = radius;
+    view.layer.maskedCorners = mask;
+    view.layer.cornerCurve = kCACornerCurveContinuous;
+    view.layer.masksToBounds = YES;
+    objc_setAssociatedObject(view, &sVerifiedLayerStateKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return YES;
+}
+static void WCKAvatarApply(id view, SEL cmd, WCKCornerVoidIMP original) {
+    original(view, cmd);
+    UIView *avatarView = (UIView *)view;
+    if (!NSThread.isMainThread) return;
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    if (!WCKEnabled(@"corners")) return;
+    BOOL chatScene = NO;
+    UIResponder *next = (UIResponder *)avatarView;
+    for (NSUInteger depth = 0; next && depth < 48; ++depth, next = next.nextResponder) {
+        NSString *name = NSStringFromClass(next.class);
+        if ([name rangeOfString:@"MsgContent" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [name rangeOfString:@"Chat" options:NSCaseInsensitiveSearch].location != NSNotFound) { chatScene = YES; break; }
+    }
+    NSString *enabledKey = chatScene ? @"avatarCornerChatPageEnabled" : @"avatarCornerEnabled";
+    NSString *radiusKey = chatScene ? @"avatarCornerChatPageRadius" : @"avatarCornerRadius";
+    CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, radiusKey, 12, 24);
+    if (![snapshot[enabledKey] boolValue]) {
+        if (fabs(avatarView.layer.cornerRadius - radius) < 0.01) avatarView.layer.cornerRadius = 0;
+        return;
+    }
+
+    CGFloat limit = MIN(avatarView.bounds.size.width, avatarView.bounds.size.height) / 2.0;
+    if (limit <= 0.5) return;
+    avatarView.layer.cornerRadius = MIN(radius, limit);
+    avatarView.layer.cornerCurve = kCACornerCurveContinuous;
+    avatarView.layer.masksToBounds = YES;
+}
+static void WCKAvatarLayout(id view, SEL cmd) {
+    WCKAvatarApply(view, cmd, sAvatarLayoutSubviews);
+}
+static void WCKProfileAvatarLayout(id view, SEL cmd) {
+    WCKAvatarApply(view, cmd, sProfileAvatarLayoutSubviews);
+}
+static void WCKFakeAvatarLayout(id view, SEL cmd) {
+    WCKAvatarApply(view, cmd, sFakeAvatarLayoutSubviews);
+}
+static void WCKMsgNavBarLayout(id view, SEL cmd) {
+    sMsgNavBarLayoutSubviews(view, cmd);
+    if (!NSThread.isMainThread) return;
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    if (!WCKEnabled(@"corners") || ![snapshot[@"topbarCornerEnabled"] boolValue]) return;
+    WCKCornerApplyLayerFamily((UIView *)view, @"topbarCorner", snapshot);
+}
+static void WCKNewMsgNavBarLayout(id view, SEL cmd) {
+    sNewMsgNavBarLayoutSubviews(view, cmd);
+    if (!NSThread.isMainThread) return;
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    if (!WCKEnabled(@"corners") || ![snapshot[@"topbarCornerEnabled"] boolValue]) return;
+    WCKCornerApplyLayerFamily((UIView *)view, @"topbarCorner", snapshot);
+}
+static void WCKTabBarLayout(id view, SEL cmd) {
+    sTabBarLayoutSubviews(view, cmd);
+    if (!NSThread.isMainThread) return;
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    if (!WCKEnabled(@"corners") || ![snapshot[@"toolbarCornerEnabled"] boolValue]) return;
+    WCKCornerApplyLayerFamily((UIView *)view, @"toolbarCorner", snapshot);
 }
 static void WCKCornerVisitViews(void) {
     NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
@@ -313,8 +494,8 @@ static CGRect WCKCornerFrame(UITableViewCell *cell, CGRect incoming, NSDictionar
     // host inserts a wrapper view. Convert before applying the horizontal inset.
     CGRect visible = [table convertRect:bounds toView:parent];
     if (!WCKCornerFiniteRect(visible)) { if (stateOut) *stateOut = state; return host; }
-    CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"cornersMargin", 8, 30);
-    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"cornersSpacing", 8, 20);
+    CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
+    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
     CGFloat left = MAX(CGRectGetMinX(host), CGRectGetMinX(visible) + margin);
     CGFloat right = MIN(CGRectGetMaxX(host), CGRectGetMaxX(visible) - margin);
     CGRect desired = host;
@@ -375,19 +556,19 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
                 !WCKCornerFiniteRect(cell.bounds)) return;
             WCKCornerState *state = WCKCornerGetState(cell, YES);
             // Every row is its own card; row-index masks left middle rows square.
-            CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"cornersRadius", 12, 24);
+            CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
             radius = MIN(radius, MIN(cell.bounds.size.width, cell.bounds.size.height) / 2.0);
             NSUInteger mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner |
                 kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
             if (radius <= 0) mask = 0;
-            CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"cornersStrokeWidth", 0, 4);
-            UIColor *border = WCKCornerFill(snapshot, @"cornersStrokeColor");
+            CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerStroke", 0, 4);
+            UIColor *border = WCKCornerFill(snapshot, @"globalCornerStrokeColor");
             WCKCornerStyleLayer(cell.layer, radius, mask, width, border, state);
             WCKCornerStyleLayer(cell.backgroundView.layer, radius, mask, 0, nil, state);
             WCKCornerStyleLayer(cell.selectedBackgroundView.layer, radius, mask, 0, nil, state);
             // An empty setting means the card colour this module supplies, not
             // "leave the host transparent" - a transparent layer shows no corners.
-            UIColor *fill = WCKCornerFill(snapshot, @"cornersFill") ?: WCKCornerDefaultFill(table);
+            UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
             state.hostFill = cell.backgroundColor; state.appliedFill = fill; state.ownsFill = YES;
             cell.backgroundColor = fill;
             UIView *back = cell.backgroundView;
@@ -466,7 +647,9 @@ void WCKRefreshCorners(void) {
                 // without snapping visible cards.
                 [cell setNeedsLayout];
             }
-            WCKCornerVisitViews();
+            // Component-family application is disabled by default until its
+            // real WeChat host anchor is verified. List cards remain active.
+            if (WCKEnableUnverifiedComponentFamilies) WCKCornerVisitViews();
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表刷新异常；保留宿主状态");
         } @finally { sCornerRefreshQueued = NO; }
@@ -502,7 +685,29 @@ void WCKInstallCorners(void) {
         BOOL viewColour = WCKInstallHook(UIView.class, @selector(setBackgroundColor:),
             (IMP)WCKCornerViewSetBackground, (IMP *)&sViewSetBackgroundColor, "v",
             (const char *[]){"@"}, 1);
-        WCKSetModuleStatus(@"corners.views", viewMoved && viewColour ? @"ready" : @"控件圆角 hook 不可用");
+        BOOL viewLayout = WCKInstallHook(UIView.class, @selector(layoutSubviews),
+            (IMP)WCKCornerViewLayout, (IMP *)&sViewLayoutSubviews, "v", NULL, 0);
+        Class avatar = NSClassFromString(@"MMHeadImageView");
+        Class profileAvatar = NSClassFromString(@"TLProfileImageView");
+        Class fakeAvatar = NSClassFromString(@"FakeHeadImageView");
+        BOOL avatarReady = WCKInstallHook(avatar, @selector(layoutSubviews),
+            (IMP)WCKAvatarLayout, (IMP *)&sAvatarLayoutSubviews, "v", NULL, 0);
+        BOOL profileAvatarReady = WCKInstallHook(profileAvatar, @selector(layoutSubviews),
+            (IMP)WCKProfileAvatarLayout, (IMP *)&sProfileAvatarLayoutSubviews, "v", NULL, 0);
+        BOOL fakeAvatarReady = WCKInstallHook(fakeAvatar, @selector(layoutSubviews),
+            (IMP)WCKFakeAvatarLayout, (IMP *)&sFakeAvatarLayoutSubviews, "v", NULL, 0);
+        Class navBar = NSClassFromString(@"MMMsgContentNavBar");
+        Class newNavBar = NSClassFromString(@"MMNewMsgContentNavBar");
+        BOOL navReady = WCKInstallHook(navBar, @selector(layoutSubviews),
+            (IMP)WCKMsgNavBarLayout, (IMP *)&sMsgNavBarLayoutSubviews, "v", NULL, 0);
+        BOOL newNavReady = WCKInstallHook(newNavBar, @selector(layoutSubviews),
+            (IMP)WCKNewMsgNavBarLayout, (IMP *)&sNewMsgNavBarLayoutSubviews, "v", NULL, 0);
+        Class tabBar = NSClassFromString(@"MMTabBar");
+        BOOL tabReady = WCKInstallHook(tabBar, @selector(layoutSubviews),
+            (IMP)WCKTabBarLayout, (IMP *)&sTabBarLayoutSubviews, "v", NULL, 0);
+        WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
+            navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
+        WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
         WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification

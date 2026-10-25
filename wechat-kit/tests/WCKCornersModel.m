@@ -225,10 +225,23 @@ static void setting(NSString *key, id value) {
 }
 static void defaults(void) {
     setting(@"enabled",@YES); setting(@"corners",@YES);
-    setting(@"cornersMargin",@24); setting(@"cornersRadius",@12); setting(@"cornersSpacing",@0);
-    setting(@"cornersList",@YES); setting(@"cornersMenu",@YES);
-    setting(@"cornersSearch",@YES); setting(@"cornersOther",@NO);
-    setting(@"cornersFill",@""); setting(@"cornersStrokeWidth",@0); setting(@"cornersStrokeColor",@"");
+    for (NSString *key in @[@"homepageCornerEnabled", @"mainFrameCornerEnabled",
+                            @"myPageCornerEnabled", @"friendProfileCornerEnabled",
+                            @"discoverPageCornerEnabled", @"tpModeCornerEnabled"])
+        setting(key,@YES);
+    setting(@"globalCornerMargin",@24); setting(@"globalCornerRadius",@12);
+    setting(@"globalCornerSpacing",@0); setting(@"globalCornerFill",@"");
+    setting(@"globalCornerStroke",@0); setting(@"globalCornerStrokeColor",@"");
+    for (NSString *family in @[@"searchCorner", @"inputCorner", @"topbarCorner", @"toolbarCorner",
+                               @"menuCorner", @"plusMenuCorner", @"mainFrameSwipeMenuCorner",
+                               @"systemPopupCorner", @"imeKeyboardCorner", @"chatToolbarCorner", @"emojiCorner",
+                               @"chatImageCorner", @"chatBubbleCorner", @"chatTimeRoundCorner", @"msgReferCorner",
+                               @"systemMessageCorner", @"systemNoticeCorner", @"voiceTranslateCorner",
+                               @"momentCorner", @"finderCorner", @"serviceCorner",
+                               @"sendPublishButtonCorner", @"avatarCorner", @"profileCorner", @"otherCorner"]) {
+        setting([family stringByAppendingString:@"Enabled"],@NO);
+        setting([family stringByAppendingString:@"Radius"],@12);
+    }
 }
 
 @interface WCKCornerScene : NSObject
@@ -300,15 +313,15 @@ static void rounded(WCKCornerScene *s) {
 }
 static void geometry(void) {
     WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-    setting(@"cornersMargin",@31);
-    CHECK_ID("settings.margin-max-30",[WCKSettings.shared.snapshot[@"cornersMargin"] doubleValue]==30);
-    setting(@"cornersMargin",@24);
+    setting(@"globalCornerMargin",@31);
+    CHECK_ID("settings.margin-max-30",[WCKSettings.shared.snapshot[@"globalCornerMargin"] doubleValue]==30);
+    setting(@"globalCornerMargin",@24);
     CGRect original=CGRectMake(0,100,420,60), inset=CGRectMake(24,100,372,60);
     frame(s,original,inset,"geometry.frame"); layout(s); rounded(s);
     for (unsigned i=0;i<50;++i) { frame(s,s.cell.frame,inset,"geometry.no-accumulation"); layout(s); }
-    setting(@"cornersMargin",@0);
+    setting(@"globalCornerMargin",@0);
     frame(s,s.cell.frame,original,"geometry.margin-zero-restores"); layout(s);
-    setting(@"cornersMargin",@24);
+    setting(@"globalCornerMargin",@24);
     CGRect narrow=CGRectMake(40,100,340,60);
     frame(s,narrow,narrow,"geometry.host-narrow"); layout(s);
     for (NSInteger row=0;row<3;++row) {
@@ -357,9 +370,9 @@ static void geometry(void) {
     [replacementTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:sameParent.cell];
     sameParent.table=replacementTable;
     layout(sameParent);
-    setting(@"cornersMargin",@0); layout(sameParent);
+    setting(@"globalCornerMargin",@0); layout(sameParent);
     CHECK_ID("geometry.same-parent-table-change-restores-host",sameRect(sameParent.cell.frame,original));
-    setting(@"cornersMargin",@24);
+    setting(@"globalCornerMargin",@24);
     // A different wrapper origin must compare old/new frames only after both
     // have been converted to the destination parent's coordinate space.
     WCKCornerScene *offsetMigration=scene(NewMainFrameViewController.class,0,0);
@@ -378,9 +391,9 @@ static void geometry(void) {
     CGRect translatedHost=[oldParent convertRect:original toView:offsetWrapper];
     frame(offsetMigration,translatedApplied,translatedApplied,"geometry.offset-migration-applied");
     layout(offsetMigration);
-    setting(@"cornersMargin",@0); layout(offsetMigration);
+    setting(@"globalCornerMargin",@0); layout(offsetMigration);
     CHECK_ID("geometry.offset-parent-change-restores-host",sameRect(offsetMigration.cell.frame,translatedHost));
-    setting(@"cornersMargin",@24);
+    setting(@"globalCornerMargin",@24);
     // A host can synchronously lay out another cell during this cell's original
     // layout. Per-cell depth must not suppress that other cell's corner pass.
     WCKCornerScene *outer=scene(NewMainFrameViewController.class,0,0);
@@ -393,7 +406,7 @@ static void geometry(void) {
 }
 static void isolation(void) {
     NSArray *excluded=@[WCKSettingsViewController.class,WCKUnknownViewController.class];
-    setting(@"cornersList",@YES);
+    setting(@"mainFrameCornerEnabled",@YES);
     {
         for (Class c in excluded) {
             WCKCornerScene *s=scene(c,0,0); CGRect r=CGRectMake(0,100,420,60);
@@ -409,10 +422,10 @@ static void isolation(void) {
     NSArray *allOnly=@[FindFriendEntryViewController.class,MoreViewController.class,ContactInfoViewController.class];
     for (Class c in allOnly) {
         WCKCornerScene *s=scene(c,0,0);
-        setting(@"cornersList",@NO);
+        setting(@"mainFrameCornerEnabled",@NO);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.page-off");
         layout(s); hostStyle(s,"scope.page-off-host");
-        setting(@"cornersList",@YES);
+        setting(@"mainFrameCornerEnabled",@YES);
         frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.page-on");
         layout(s); rounded(s);
     }
@@ -442,29 +455,29 @@ static void isolation(void) {
     CHECK_ID("geometry.narrow-radius-capped",near(narrow.cell.layer.cornerRadius,10));
     // Vertical card spacing comes from the cell frame, so neighbours cannot
     // share an edge and hide their rounded corners.
-    setting(@"cornersSpacing",@12);
+    setting(@"globalCornerSpacing",@12);
     WCKCornerScene *spaced=scene(NewMainFrameViewController.class,0,0);
     frame(spaced,CGRectMake(0,100,420,60),CGRectMake(24,106,372,48),"geometry.spacing");
     layout(spaced);
-    setting(@"cornersSpacing",@0);
+    setting(@"globalCornerSpacing",@0);
     frame(spaced,spaced.cell.frame,CGRectMake(24,100,372,60),"geometry.spacing-cleared");
 }
 
 static void restore(void) {
     WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-    setting(@"cornersFill",@"#123456"); setting(@"cornersStrokeWidth",@2);
-    setting(@"cornersStrokeColor",@"#AABBCC");
+    setting(@"globalCornerFill",@"#123456"); setting(@"globalCornerStroke",@2);
+    setting(@"globalCornerStrokeColor",@"#AABBCC");
     frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"restore.initial-frame"); layout(s);
     CHECK_ID("restore.fill-applied",sameColor(s.cell.backgroundColor.CGColor,rgb(18/255.,52/255.,86/255.).CGColor));
     CHECK_ID("restore.border-applied",near(s.cell.layer.borderWidth,2) &&
         sameColor(s.cell.layer.borderColor,rgb(170/255.,187/255.,204/255.).CGColor));
-    setting(@"cornersFill",@""); setting(@"cornersStrokeWidth",@0); setting(@"cornersStrokeColor",@"");
+    setting(@"globalCornerFill",@""); setting(@"globalCornerStroke",@0); setting(@"globalCornerStrokeColor",@"");
     layout(s);
     CHECK_ID("restore.default-fill",sameColor(s.cell.backgroundColor.CGColor,rgb(1,1,1).CGColor));
     CHECK_ID("restore.empty-border",near(s.cell.layer.borderWidth,1) && sameColor(s.cell.layer.borderColor,s.hostBorder.CGColor));
     setting(@"corners",@NO); layout(s); hostStyle(s,"restore.off");
-    setting(@"corners",@YES); setting(@"cornersFill",@"#123456");
-    setting(@"cornersStrokeWidth",@2); setting(@"cornersStrokeColor",@"#AABBCC"); layout(s);
+    setting(@"corners",@YES); setting(@"globalCornerFill",@"#123456");
+    setting(@"globalCornerStroke",@2); setting(@"globalCornerStrokeColor",@"#AABBCC"); layout(s);
     // Host replaces our last-applied values. A following pass must adopt, not erase them.
     UIColor *newHost=rgb(.8,.1,.2), *newBorder=rgb(.7,.2,.9);
     s.cell.backgroundColor=newHost;
@@ -478,8 +491,8 @@ static void restore(void) {
             [l.cornerCurve isEqual:@"new-host"] && near(l.borderWidth,3) && sameColor(l.borderColor,newBorder.CGColor));
     }
     CHECK_ID("restore.host-new-bg",s.cell.backgroundColor==newHost);
-    defaults(); setting(@"cornersList",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
-    setting(@"cornersList",@YES); layout(s); rounded(s);
+    defaults(); setting(@"mainFrameCornerEnabled",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
+    setting(@"mainFrameCornerEnabled",@YES); layout(s); rounded(s);
     // Same cell migrates to an excluded page, not a new cell.
     UIViewController *excluded=[WCKSettingsViewController new];
     s.table.nextResponder=excluded.view; s.table.superview=excluded.view;
@@ -541,7 +554,7 @@ static void refresh(void) {
         s.cell.fixtureLayoutCalls==before);
     layout(s);
     CHECK_ID("refresh.radius",near(s.cell.layer.cornerRadius,12));
-    setting(@"cornersRadius",@18); before=s.cell.fixtureLayoutCalls; WCKRefreshCorners(); drainRefresh();
+    setting(@"globalCornerRadius",@18); before=s.cell.fixtureLayoutCalls; WCKRefreshCorners(); drainRefresh();
     layout(s);
     CHECK_ID("refresh.parameters",s.cell.fixtureLayoutCalls==before+1 && near(s.cell.layer.cornerRadius,18));
     setting(@"corners",@NO); WCKRefreshCorners(); drainRefresh(); layout(s); hostStyle(s,"refresh.off-restored");
@@ -562,12 +575,15 @@ static void abi(void) {
     for (NSDictionary *entry in hookTargets) {
         NSString *c=entry[@"class"], *sel=entry[@"selector"];
         BOOL cellTarget=[@[@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
+        BOOL verifiedTarget=[@[@"MMHeadImageView", @"TLProfileImageView", @"FakeHeadImageView",
+                              @"MMMsgContentNavBar", @"MMNewMsgContentNavBar", @"MMTabBar"] containsObject:c];
         BOOL viewTarget=[c isEqual:@"UIView"];
         BOOL allowedSelector=viewTarget
-            ? ([sel isEqual:@"didMoveToWindow"] || [sel isEqual:@"setBackgroundColor:"])
+            ? ([sel isEqual:@"didMoveToWindow"] || [sel isEqual:@"setBackgroundColor:"] ||
+               [sel isEqual:@"layoutSubviews"])
             : ([sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
                [sel isEqual:@"prepareForReuse"]);
-        CHECK_ID("hooks.allowed-target",cellTarget && allowedSelector);
+        CHECK_ID("hooks.allowed-target",(cellTarget || verifiedTarget) && allowedSelector);
     }
 }
 int main(int argc, char **argv) {

@@ -28,6 +28,101 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     return rows;
 }
 
+static NSDictionary<NSString *, id> *WCKCornerSwitchRow(NSString *key, NSString *title, NSString *help) {
+    return @{ @"type": @"switch", @"key": key, @"title": title, @"help": help };
+}
+static NSDictionary<NSString *, id> *WCKCornerSliderRow(NSString *key, NSString *title,
+                                                         NSNumber *max, NSString *help) {
+    return @{ @"type": @"slider", @"key": key, @"title": title,
+              @"min": @0, @"max": max, @"help": help };
+}
+static NSDictionary<NSString *, id> *WCKCornerHeaderRow(NSString *title, NSString *help) {
+    return @{ @"type": @"header", @"title": title, @"help": help ?: @"" };
+}
+static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
+    static NSArray *rows;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray *result = [NSMutableArray array];
+        [result addObject:WCKCornerHeaderRow(@"全局卡片页面", @"页面开关与 WCR 全局卡片参数分开保存。")];
+        NSArray *pages = @[
+            @[ @"homepageCornerEnabled", @"首页卡片", @"首页主列表卡片。" ],
+            @[ @"mainFrameCornerEnabled", @"会话列表卡片", @"微信首页会话列表。" ],
+            @[ @"myPageCornerEnabled", @"我的页面卡片", @"我页面的功能列表。" ],
+            @[ @"friendProfileCornerEnabled", @"好友资料页卡片", @"联系人资料页的列表与卡片。" ],
+            @[ @"discoverPageCornerEnabled", @"发现页卡片", @"发现页列表。" ],
+            @[ @"tpModeCornerEnabled", @"TP 模式卡片", @"WCR 单独保留的 TP 模式页面。" ]
+        ];
+        for (NSArray *row in pages)
+            [result addObject:WCKCornerSwitchRow(row[0], row[1], row[2])];
+        [result addObject:WCKCornerSliderRow(@"globalCornerRadius", @"全局卡片半径", @24,
+            @"只作用于全局卡片路径，不覆盖组件自己的半径。")];
+        [result addObject:WCKCornerSliderRow(@"globalCornerMargin", @"全局卡片边距", @30,
+            @"卡片左右边距，WCR 范围 0–30。")];
+        [result addObject:WCKCornerSliderRow(@"globalCornerSpacing", @"全局卡片间距", @50,
+            @"卡片之间的间距；分组间距另有置顶/置底设置。")];
+        [result addObject:WCKCornerSliderRow(@"mainFramePinnedTopSpacing", @"置顶会话顶部间距", @50,
+            @"置顶分组上方间距；未单独设置时沿用全局间距。")];
+        [result addObject:WCKCornerSliderRow(@"mainFrameBelowPinnedSpacing", @"置顶会话下方间距", @50,
+            @"置顶分组下方间距；未单独设置时沿用全局间距。")];
+        [result addObject:WCKCornerSliderRow(@"globalCornerStroke", @"全局描边宽度", @4,
+            @"统一描边宽度。组件专属描边暂按统一描边色/宽度处理。")];
+        [result addObject:@{ @"type": @"choice", @"key": @"globalCornerStrokeStyle",
+            @"title": @"全局描边样式", @"help": @"WCR 的描边样式。",
+            @"items": @[ @{ @"value": @"0", @"title": @"实线" },
+                          @{ @"value": @"1", @"title": @"虚线" },
+                          @{ @"value": @"2", @"title": @"点线" } ] }];
+        [result addObject:@{ @"key": @"globalCornerFill", @"title": @"全局卡片背景色",
+            @"help": @"留空使用深浅色默认卡片色；格式 #RRGGBB。" }];
+        [result addObject:@{ @"key": @"globalCornerStrokeColor", @"title": @"全局描边颜色",
+            @"help": @"留空不改变宿主描边色；格式 #RRGGBB。" }];
+        [result addObject:@{ @"key": @"globalCornerCustomExcludedVCClassNames",
+            @"title": @"全局排除页面", @"help": @"按 VC 类名逗号分隔；匹配后不应用全局卡片。" }];
+
+        NSArray *families = @[
+            @[ @"searchCorner", @"搜索框", @"搜索栏及其专用输入容器。" ],
+            @[ @"inputCorner", @"输入框", @"消息输入框容器，不等同于搜索框。" ],
+            @[ @"topbarCorner", @"顶栏", @"页面顶部栏，WCR 另有顶部平角开关。" ],
+            @[ @"toolbarCorner", @"工具栏", @"聊天工具栏，WCR 另有底部平角开关。" ],
+            @[ @"chatToolbarCorner", @"聊天工具栏", @"聊天工具栏专用半径，独立于输入框和通用工具栏。" ],
+            @[ @"menuCorner", @"长按菜单", @"通用菜单/操作面板。" ],
+            @[ @"plusMenuCorner", @"加号菜单", @"聊天页加号菜单，独立于长按菜单。" ],
+            @[ @"mainFrameSwipeMenuCorner", @"会话左滑菜单", @"会话列表左滑操作菜单。" ],
+            @[ @"systemPopupCorner", @"系统弹窗", @"系统弹窗容器。" ],
+            @[ @"imeKeyboardCorner", @"输入法键盘", @"键盘窗口顶部容器，不改输入框本身。" ],
+            @[ @"emojiCorner", @"表情控件", @"表情面板与表情卡片。" ],
+            @[ @"chatImageCorner", @"聊天图片", @"图片消息及其卡片。" ],
+            @[ @"chatFileCorner", @"聊天文件", @"文件消息开关（WCR 无独立半径，跟随图片族半径）。" ],
+            @[ @"chatLocationCorner", @"聊天位置", @"位置卡片开关（WCR 无独立半径，跟随图片族半径）。" ],
+            @[ @"chatBubbleCorner", @"聊天气泡", @"聊天消息气泡。" ],
+            @[ @"chatTimeRoundCorner", @"聊天时间", @"聊天时间胶囊。" ],
+            @[ @"msgReferCorner", @"消息引用", @"消息引用卡片。" ],
+            @[ @"systemMessageCorner", @"系统消息", @"系统消息卡片。" ],
+            @[ @"systemNoticeCorner", @"系统通知", @"系统通知/横幅。" ],
+            @[ @"voiceTranslateCorner", @"语音转文字", @"语音转文字结果卡片。" ],
+            @[ @"momentCorner", @"朋友圈", @"朋友圈卡片及操作区域。" ],
+            @[ @"finderCorner", @"视频号/发现", @"视频号与发现内容卡片。" ],
+            @[ @"serviceCorner", @"服务页", @"服务/小程序内容卡片。" ],
+            @[ @"sendPublishButtonCorner", @"发送/发布按钮", @"发送与发布按钮。" ],
+            @[ @"avatarCorner", @"头像", @"头像圆角；资料头像另有资料卡开关。" ],
+            @[ @"profileCorner", @"资料卡", @"资料卡容器与资料页卡片。" ],
+            @[ @"otherCorner", @"其他已识别控件", @"未能归入 WCR 专用路径的控件，默认关闭。" ]
+        ];
+        [result addObject:WCKCornerHeaderRow(@"组件圆角（全部独立）", @"每个开关和半径对应 WCR 的独立配置族。")];
+        for (NSArray *family in families) {
+            NSString *base = family[0];
+            [result addObject:WCKCornerSwitchRow([base stringByAppendingString:@"Enabled"], family[1], family[2])];
+            BOOL radiusAvailable = ![base isEqualToString:@"chatFileCorner"] &&
+                ![base isEqualToString:@"chatLocationCorner"];
+            if (radiusAvailable) [result addObject:WCKCornerSliderRow([base stringByAppendingString:@"Radius"],
+                [family[1] stringByAppendingString:@"半径"], @24,
+                @"只作用于这一类控件；不会改动其他圆角类别。")];
+        }
+        rows = [result copy];
+    });
+    return rows;
+}
+
 @interface WCKSettingsViewController ()
 @property (nonatomic, strong) WCKSettings *settings;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *statuses;
@@ -258,7 +353,7 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     if ([featureID isEqualToString:@"albumSheet"])
         return @"聊天页半屏相册依赖微信 8.0.76 及以上版本提供的实验开关；低版本不会启用，也不会强开。";
     if ([featureID isEqualToString:@"corners"])
-        return @"按控件类型分别开关，每类互不影响。列表卡片会留出左右边距与上下间距，菜单、搜索框和其他带背景的控件只按半径圆角，不改尺寸。留空背景色时卡片使用默认色（深色 #2C2C2E、浅色白色）。关闭后恢复宿主样式。";
+        return @"按 WCR 的具体功能分别开关：页面卡片、搜索框、输入框、顶栏、工具栏、菜单、聊天内容、系统弹窗、头像和资料卡等互不共用开关。全局卡片参数只作用于卡片路径；组件半径独立保存。源码证据显示 WCR 不是把所有 UIView 按类名粗分。";
     return @"";
 }
 
@@ -267,33 +362,10 @@ static NSArray<NSDictionary<NSString *, NSString *> *> *WCKModuleRows(void) {
     if ([featureID isEqualToString:@"svgTint"])
         return [[WCKSVGColorViewController alloc] initWithSettings:self.settings];
     NSArray<NSDictionary<NSString *, id> *> *extra = nil;
-    if ([featureID isEqualToString:@"momentsTime"]) {
+    if ([featureID isEqualToString:@"momentsTime"])
         extra = @[@{@"key": @"momentsFormat", @"title": @"时间格式",
                     @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
-    } else if ([featureID isEqualToString:@"corners"]) {
-        extra = @[
-            @{ @"type": @"slider", @"key": @"cornersRadius", @"title": @"圆角半径",
-               @"min": @0, @"max": @24, @"help": @"0 表示不圆角，最大 24。" },
-            @{@"type": @"slider", @"key": @"cornersMargin", @"title": @"卡片边距",
-              @"min": @0, @"max": @30, @"help": @"卡片左右与列表边缘的距离（WCR 范围 0–30）。"},
-            @{@"type": @"slider", @"key": @"cornersSpacing", @"title": @"卡片间距",
-              @"min": @0, @"max": @20, @"help": @"相邻卡片上下的空隙；0 表示卡片相连。"},
-            @{@"type": @"switch", @"key": @"cornersList", @"title": @"列表卡片",
-              @"help": @"会话、通讯录、发现、我、资料页的列表单元格。"},
-            @{@"type": @"switch", @"key": @"cornersMenu", @"title": @"菜单与弹窗",
-              @"help": @"长按菜单、弹出面板、ActionSheet 与弹窗容器。"},
-            @{@"type": @"switch", @"key": @"cornersSearch", @"title": @"搜索框",
-              @"help": @"搜索栏与搜索输入容器。"},
-            @{@"type": @"switch", @"key": @"cornersOther", @"title": @"其他控件",
-              @"help": @"其他自己绘制背景的容器；默认关闭，避免误伤。"},
-            @{@"key": @"cornersFill", @"title": @"卡片背景色",
-              @"help": @"留空使用默认卡片色（#2C2C2E / 白）。格式 #RRGGBB。"},
-            @{@"type": @"slider", @"key": @"cornersStrokeWidth", @"title": @"描边宽度",
-              @"min": @0, @"max": @4, @"help": @"0 表示无描边。"},
-            @{@"key": @"cornersStrokeColor", @"title": @"描边颜色",
-              @"help": @"留空不描边。格式 #RRGGBB。"}
-        ];
-    }
+    else if ([featureID isEqualToString:@"corners"]) extra = WCKCornerExtraRows();
     return [[WCKFeatureDetailViewController alloc] initWithSettings:self.settings
         featureID:featureID settingsKey:row[@"key"] title:row[@"title"]
         detail:[self detailForFeatureID:featureID] extraRows:extra];

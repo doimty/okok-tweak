@@ -14,24 +14,56 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
     static NSDictionary *defaults;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        defaults = @{
+        NSMutableDictionary *d = [@{
             @"enabled": @NO, @"keyboardSwipe": @NO, @"svgTint": @NO,
             @"momentsTime": @NO, @"albumSheet": @NO, @"readAll": @NO, @"corners": @NO,
             @"svgTintLight": @"#07C160", @"svgTintDark": @"#07C160",
             @"svgInclude": @"", @"svgExclude": @"",
             @"svgUseFixedColor": @YES, @"svgPaletteHexes": WCKDefaultSVGPalette(),
-            @"svgRandomAlpha": @1.0,
-            @"cornersRadius": @12.0,
-            @"cornersMargin": @8.0, @"cornersSpacing": @8.0, @"cornersStrokeWidth": @0.0,
-            @"cornersList": @YES, @"cornersMenu": @YES, @"cornersSearch": @YES,
-            @"cornersOther": @NO,
-            @"cornersFill": @"", @"cornersStrokeColor": @"",
-            @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
-        };
+            @"svgRandomAlpha": @1.0, @"momentsFormat": @"yyyy-MM-dd HH:mm:ss"
+        } mutableCopy];
+        // WCR keeps the six page gates separate from each control family.
+        NSArray *pageKeys = @[@"homepageCornerEnabled", @"mainFrameCornerEnabled",
+            @"myPageCornerEnabled", @"friendProfileCornerEnabled",
+            @"discoverPageCornerEnabled", @"tpModeCornerEnabled"];
+        for (NSString *key in pageKeys) d[key] = @YES;
+
+        // One switch and one radius per independently configurable WCR family.
+        NSArray *families = @[
+            @"searchCorner", @"inputCorner", @"topbarCorner", @"toolbarCorner",
+            @"menuCorner", @"plusMenuCorner", @"mainFrameSwipeMenuCorner",
+            @"systemPopupCorner", @"imeKeyboardCorner", @"chatToolbarCorner", @"emojiCorner",
+            @"chatImageCorner", @"chatBubbleCorner", @"chatTimeRoundCorner", @"msgReferCorner",
+            @"systemMessageCorner", @"systemNoticeCorner", @"voiceTranslateCorner",
+            @"momentCorner", @"finderCorner", @"serviceCorner",
+            @"sendPublishButtonCorner", @"avatarCorner", @"profileCorner", @"otherCorner"
+        ];
+        for (NSString *family in families) {
+            d[[family stringByAppendingString:@"Enabled"]] = @NO;
+            d[[family stringByAppendingString:@"Radius"]] = @12.0;
+        }
+        // WCR exposes these two as switches only; their visuals reuse the
+        // chat-image family radius rather than inventing a second radius.
+        d[@"chatFileCornerEnabled"] = @NO;
+        d[@"chatLocationCornerEnabled"] = @NO;
+        d[@"avatarCornerChatPageEnabled"] = @NO;
+        d[@"avatarCornerChatPageRadius"] = @12.0;
+        d[@"topbarCornerTopFlatEnabled"] = @NO;
+        d[@"toolbarCornerBottomFlatEnabled"] = @NO;
+        d[@"globalCornerRadius"] = @12.0;
+        d[@"globalCornerMargin"] = @8.0;
+        d[@"globalCornerSpacing"] = @8.0;
+        d[@"globalCornerStroke"] = @0.0;
+        d[@"globalCornerFill"] = @"";
+        d[@"globalCornerStrokeColor"] = @"";
+        d[@"globalCornerStrokeStyle"] = @0;
+        d[@"globalCornerCustomExcludedVCClassNames"] = @"";
+        d[@"mainFramePinnedTopSpacing"] = @8.0;
+        d[@"mainFrameBelowPinnedSpacing"] = @8.0;
+        defaults = [d copy];
     });
     return defaults;
 }
-
 static NSError *WCKError(NSInteger code, NSString *message, NSError *underlying) {
     NSMutableDictionary *info = [@{NSLocalizedDescriptionKey: message} mutableCopy];
     if (underlying) info[NSUnderlyingErrorKey] = underlying;
@@ -58,26 +90,29 @@ static id WCKValidatedValue(NSString *key, id value) {
     if ([defaultValue isKindOfClass:NSNumber.class]) {
         if (![value isKindOfClass:NSNumber.class]) return nil;
         BOOL isBoolean = CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
-        // Only the alpha key is numeric; every other number key is a switch.
         if ([key isEqualToString:@"svgRandomAlpha"]) {
             if (isBoolean) return nil;
             double alpha = [value doubleValue];
             if (!isfinite(alpha)) return nil;
             return @(MIN(1.0, MAX(0.2, alpha)));
         }
-        if ([key isEqualToString:@"cornersRadius"]) {
-            if (isBoolean) return nil;
-            double radius = [value doubleValue];
-            if (!isfinite(radius)) return nil;
-            return @(MIN(24.0, MAX(0.0, radius)));
-        }
-        if ([key isEqualToString:@"cornersMargin"] || [key isEqualToString:@"cornersSpacing"] ||
-            [key isEqualToString:@"cornersStrokeWidth"]) {
+        BOOL numericCorner = [key hasSuffix:@"Radius"] || [key hasSuffix:@"Margin"] ||
+            [key hasSuffix:@"Spacing"] || [key hasSuffix:@"BorderSize"] ||
+            [key isEqualToString:@"globalCornerStroke"] ||
+            [key isEqualToString:@"globalCornerStrokeStyle"] ||
+            [key isEqualToString:@"mainFramePinnedTopSpacing"] ||
+            [key isEqualToString:@"mainFrameBelowPinnedSpacing"];
+        if (numericCorner) {
             if (isBoolean) return nil;
             double number = [value doubleValue];
             if (!isfinite(number)) return nil;
-            double high = [key isEqualToString:@"cornersStrokeWidth"] ? 4.0 :
-                ([key isEqualToString:@"cornersMargin"] ? 30.0 : 24.0);
+            double high = 24.0;
+            if ([key hasSuffix:@"Margin"]) high = 30.0;
+            else if ([key hasSuffix:@"Spacing"] ||
+                     [key isEqualToString:@"mainFramePinnedTopSpacing"] ||
+                     [key isEqualToString:@"mainFrameBelowPinnedSpacing"]) high = 50.0;
+            else if ([key hasSuffix:@"BorderSize"] || [key isEqualToString:@"globalCornerStroke"]) high = 4.0;
+            else if ([key isEqualToString:@"globalCornerStrokeStyle"]) high = 2.0;
             return @(MIN(high, MAX(0.0, number)));
         }
         if (!isBoolean) return nil;
@@ -85,13 +120,15 @@ static id WCKValidatedValue(NSString *key, id value) {
     }
     if (![value isKindOfClass:NSString.class]) return nil;
     NSString *text = [value copy];
+    BOOL longText = [key isEqualToString:@"momentsFormat"] ||
+        [key isEqualToString:@"globalCornerCustomExcludedVCClassNames"];
     NSUInteger limit = [key isEqualToString:@"momentsFormat"] ? WCKMaximumFormatLength :
-        (([key isEqualToString:@"svgInclude"] || [key isEqualToString:@"svgExclude"]) ?
+        (longText || [key isEqualToString:@"svgInclude"] || [key isEqualToString:@"svgExclude"] ?
          WCKMaximumCSVLength : 7);
     if (text.length > limit ||
         [text rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound) return nil;
-    if ([key isEqualToString:@"cornersFill"] || [key isEqualToString:@"cornersStrokeColor"]) {
-        // Empty means "leave the host colour alone".
+    if ([key isEqualToString:@"globalCornerFill"] || [key isEqualToString:@"globalCornerStrokeColor"]) {
+        // Empty means "use the resolved host/default colour".
         return text.length == 0 ? @"" : WCKNormalizeHex(text);
     }
     if ([key isEqualToString:@"svgTintLight"] || [key isEqualToString:@"svgTintDark"]) {

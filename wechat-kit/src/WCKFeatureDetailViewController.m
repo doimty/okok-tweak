@@ -130,7 +130,12 @@
         cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
         BOOL editable = [self hostSupportsFeature];
         cell.textLabel.enabled = editable;
-        if ([type isEqualToString:@"slider"]) {
+        if ([type isEqualToString:@"header"]) {
+            cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+            cell.textLabel.textColor = UIColor.secondaryLabelColor;
+            cell.detailTextLabel.text = row[@"help"];
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        } else if ([type isEqualToString:@"slider"]) {
             double minimum = [row[@"min"] doubleValue], maximum = [row[@"max"] doubleValue];
             id stored = self.settings.snapshot[row[@"key"]];
             double value = [stored isKindOfClass:NSNumber.class] ? [stored doubleValue] : minimum;
@@ -156,7 +161,10 @@
             [toggle addTarget:self action:@selector(optionSwitchChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
         } else if ([type isEqualToString:@"choice"]) {
-            NSString *value = [self.settings stringForKey:row[@"key"] defaultValue:@""];
+            id raw = self.settings.snapshot[row[@"key"]];
+            NSString *value = [raw isKindOfClass:NSNumber.class] ?
+                [NSString stringWithFormat:@"%ld", (long)[raw integerValue]] :
+                ([raw isKindOfClass:NSString.class] ? raw : @"");
             NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
             NSString *shown = value;
             for (NSDictionary<NSString *, NSString *> *item in items)
@@ -237,7 +245,10 @@
                 typeof(self) self = weakSelf;
                 if (!self) return;
                 NSError *error = nil;
-                [self.settings setObject:item[@"value"] forKey:row[@"key"] error:&error];
+                id value = item[@"value"];
+                if ([row[@"key"] isEqualToString:@"globalCornerStrokeStyle"])
+                    value = @([value integerValue]);
+                [self.settings setObject:value forKey:row[@"key"] error:&error];
                 [self.tableView reloadData];
             }]];
     }
@@ -257,7 +268,8 @@
         [self presentChoiceForRow:row];
         return;
     }
-    if ([row[@"type"] isEqualToString:@"slider"] ||
+    if ([row[@"type"] isEqualToString:@"header"] ||
+        [row[@"type"] isEqualToString:@"slider"] ||
         [row[@"type"] isEqualToString:@"switch"]) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:row[@"title"]
         message:row[@"help"] preferredStyle:UIAlertControllerStyleAlert];

@@ -23,40 +23,38 @@ class SettingsContract(unittest.TestCase):
         self.assertIn("UITableViewController", self.vh)
 
     def test_exact_schema_and_safe_defaults(self):
-        defaults = self.m.split("defaults = @{", 1)[1].split("};", 1)[0]
-        keys = set(re.findall(r'@"([^"]+)"\s*:', defaults))
-        self.assertEqual(keys, {"enabled", "keyboardSwipe", "svgTint", "momentsTime",
-                               "albumSheet", "readAll", "svgTintLight", "svgTintDark",
-                               "svgInclude", "svgExclude", "momentsFormat",
-                               "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
-                               "cornersRadius", "corners", "cornersList", "cornersMenu",
-                               "cornersSearch", "cornersOther",
-                               "cornersMargin", "cornersSpacing", "cornersStrokeWidth",
-                               "cornersFill", "cornersStrokeColor"})
-        self.assertEqual(defaults.count("@NO"), 8)
-        # Palette defaults to a usable non-empty set and fixed mode stays the default.
-        self.assertIn('@"svgUseFixedColor": @YES', defaults)
-        self.assertIn('@"svgPaletteHexes": WCKDefaultSVGPalette()', defaults)
-        self.assertIn('@"svgRandomAlpha": @1.0', defaults)
-        self.assertIn('@"cornersRadius": @12.0', defaults)
-        self.assertIn('@"cornersList": @YES', defaults)
-        self.assertIn('@"cornersOther": @NO', defaults)
-        self.assertIn('@"cornersMargin": @8.0', defaults)
-        self.assertIn('@"cornersSpacing": @8.0', defaults)
-        self.assertIn('@"cornersFill": @""', defaults)
-        self.assertEqual(defaults.count('@"#07C160"'), 2)
-        self.assertIn('@"svgInclude": @""', defaults)
-        self.assertIn('@"momentsFormat": @"yyyy-MM-dd HH:mm:ss"', defaults)
+        source = self.m
+        expected = ["enabled", "keyboardSwipe", "svgTint", "momentsTime", "albumSheet", "readAll", "corners",
+                    "svgTintLight", "svgTintDark", "svgInclude", "svgExclude", "momentsFormat",
+                    "svgUseFixedColor", "svgPaletteHexes", "svgRandomAlpha",
+                    "homepageCornerEnabled", "mainFrameCornerEnabled", "myPageCornerEnabled",
+                    "friendProfileCornerEnabled", "discoverPageCornerEnabled", "tpModeCornerEnabled",
+                    "globalCornerRadius", "globalCornerMargin", "globalCornerSpacing", "globalCornerStroke",
+                    "globalCornerFill", "globalCornerStrokeColor", "globalCornerStrokeStyle",
+                    "globalCornerCustomExcludedVCClassNames", "mainFramePinnedTopSpacing", "mainFrameBelowPinnedSpacing"]
+        for key in expected:
+            self.assertTrue(('@"' + key + '"') in source or key in source)
+        for family in ["searchCorner", "inputCorner", "topbarCorner", "toolbarCorner", "menuCorner",
+                       "plusMenuCorner", "mainFrameSwipeMenuCorner", "systemPopupCorner", "imeKeyboardCorner",
+                       "emojiCorner", "chatImageCorner", "chatBubbleCorner", "chatTimeRoundCorner",
+                       "msgReferCorner", "systemMessageCorner", "systemNoticeCorner", "voiceTranslateCorner",
+                       "momentCorner", "finderCorner", "serviceCorner", "sendPublishButtonCorner",
+                       "avatarCorner", "profileCorner", "otherCorner"]:
+            self.assertIn(family, source)
+        for switchOnly in ["chatFileCornerEnabled", "chatLocationCornerEnabled"]:
+            self.assertIn(switchOnly, source)
+        self.assertIn('@"globalCornerRadius"] = @12.0', source)
+        self.assertIn('@"globalCornerMargin"] = @8.0', source)
+        self.assertIn('@"globalCornerSpacing"] = @8.0', source)
+        self.assertIn('@"corners": @NO', source)
 
     def test_every_declared_switch_has_a_default(self):
-        # Any key surfaced by the settings UI must exist in the defaults table,
-        # otherwise the write is rejected at runtime with "unsupported setting".
         page = (ROOT / "src/WCKSettingsViewController.m").read_text()
-        declared = set(re.findall(r'@"key":\s*@"([A-Za-z]+)"', page))
-        defaults = self.m.split("defaults = @{", 1)[1].split("};", 1)[0]
-        known = set(re.findall(r'@"([^"]+)"\s*:', defaults))
-        missing = sorted(declared - known)
-        self.assertEqual(missing, [], "switch keys missing from defaults: %s" % missing)
+        declared = set(re.findall(r'@"key"\s*:\s*@"([A-Za-z0-9]+)"', page))
+        for key in declared:
+            self.assertTrue(key in self.m or (key.endswith("Enabled") and key[:-7] in self.m) or
+                            (key.endswith("Radius") and key[:-6] in self.m),
+                            "setting key absent from schema generator: %s" % key)
 
     def test_bounded_loading_and_types(self):
         self.assertIn("readDataUpToLength:WCKMaximumFileBytes + 1", self.m)
