@@ -1,4 +1,14 @@
-## 2026-10-25 按用户要求移除兼容门控
+## 2026-10-30 Hook 安装器加固候选（源码状态，不代表真机通过）
+
+- 基于 `8ea157c` 另建修复分支，范围为安装器、对应测试和 CI 验证，不改功能回调、设备数据或已安装插件。
+- 恢复按单个 type encoding 比较返回类型、显式参数类型/数量；仍无微信版本/build 拒绝名单，`WCKEnabled` 仍仅检查总开关和模块开关。
+- Hook 后端输出与回调正在使用的 original 分离，保留后端提供的 next-implementation（可能是继承链 trampoline）；相同 replacement 幂等，不同 replacement 报冲突。
+- 仅“原链有效 + 直接 Method 读回为 replacement”确认安装。其它已调用后端的结果报 `attempted_unverified.*`，保留安全 fallback/有效原链并隔离该目标，避免重复 Hook；不把未知结果说成已回滚。
+- 新增执行实际生产安装器的 Foundation 夹具和定向变异测试。测试/构建状态以对应 Actions run 和源 SHA 为准：`Foundation model / not real WeChat / not device validation`。
+- 校正先前审计：后端能够写回 NULL，因此原有判空不是“永远为假”；`MSHookMessageEx` 没有通用卸载/事务 API，直接回写 snapshot IMP 可能破坏其他插件和继承链。
+- 尚未安装到目标设备；完整安全模式、模块晚加载重试、圆角/UI 范围收敛属于后续任务，不在本轮声称完成。
+
+## 2026-10-25 按用户要求移除兼容门控（历史）
 - 移除 `WCKStart`、`WCKInstallHook`、`WCKEnabled`、入口/UI 设置的宿主身份与 `ready` 拒绝逻辑；settings 可保存未就绪模块开关，状态仅作提示。
 - `WCKMethodMatches` 现在只检查 class/selector 存在，不比对方法返回类型、参数类型或参数数量；一键已读代理的签名检查也改为存在性查询。
 - 半屏相册不再按 8.0.76 或磁盘身份拦截；仍只 Hook 精确实验 selector。圆角组件遍历不再受未验证族总闸阻止，按具体 family 开关与 4000 视图上限工作。

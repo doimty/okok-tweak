@@ -14,8 +14,18 @@ static NSString *lastStatus;
 BOOL WCKHostIsSupported(void) { return supported; }
 void WCKSetModuleStatus(NSString *key, NSString *status) { lastStatus = status; }
 BOOL WCKMethodMatches(Class cls, SEL sel, const char *ret, const char *const *args, unsigned count) {
-    (void)ret; (void)args; (void)count;
-    return cls && sel && class_getInstanceMethod(cls,sel) != NULL;
+    // Registry fixture stays isolated, but mirrors production's per-type policy.
+    if (!cls || !sel || !ret || !*ret || (count && !args)) return NO;
+    Method method=class_getInstanceMethod(cls,sel); if (!method) return NO;
+    unsigned actualCount=method_getNumberOfArguments(method);
+    if (actualCount<2 || count!=actualCount-2) return NO;
+    char *type=method_copyReturnType(method);
+    BOOL matches=WCKTypeMatches(type,ret); free(type);
+    for (unsigned i=0;matches && i<count;++i) {
+        type=method_copyArgumentType(method,i+2);
+        matches=WCKTypeMatches(type,args[i]); free(type);
+    }
+    return matches;
 }
 @interface EntryModel : NSObject
 @property (nonatomic,strong) id controller;
@@ -102,7 +112,8 @@ int main(int argc,const char *argv[]) { @autoreleasepool {
             CHECK(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC))==0);
             CHECK(!registrations);
         } else if (wrongABI) {
-            CHECK(WCKRegisterPluginEntry()); CHECK(registrations==1);
+            CHECK(!WCKRegisterPluginEntry()); CHECK(registrations==0);
+            CHECK(![lastStatus isEqual:@"ready"]);
         } else CHECK(NO);
     }
     printf("ENTRY PASS %s\n",argv[1]);

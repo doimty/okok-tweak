@@ -23,6 +23,7 @@ jobs:
       THEOS_PACKAGE_SCHEME: roothide
       FINALPACKAGE: '1'
       HOMEBREW_NO_AUTO_UPDATE: '1'
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
       - name: Record Apple toolchain
@@ -44,6 +45,12 @@ jobs:
           python3 tests/test_svg_contract.py
           python3 tests/test_svgcolor_contract.py
           python3 tests/test_corners_contract.py
+      - name: Native production Hook installer and named mutations
+        working-directory: wechat-kit
+        run: |
+          set -euo pipefail
+          ulimit -c 0
+          python3 tests/run_runtime_installer_native.py
       - name: Native Foundation entry registration regression
         working-directory: wechat-kit
         run: |
@@ -126,6 +133,7 @@ jobs:
             wechat-kit/packages/*.deb
             wechat-kit/build.log
             wechat-kit/evidence/host-policy-tests.json
+            wechat-kit/evidence/native-runtime-installer-tests.json
             wechat-kit/evidence/native-entry-tests.json
             wechat-kit/evidence/native-host-identity-tests.json
             wechat-kit/evidence/native-svg-selection-tests.json
