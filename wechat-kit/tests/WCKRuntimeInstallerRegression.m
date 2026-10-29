@@ -6,6 +6,7 @@
 #import <dlfcn.h>
 #import "WCKRuntime.h"
 #import "WCKSettings.h"
+#import "WCKPolicy.h"
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -15,9 +16,33 @@
 #import <ptrauth.h>
 #endif
 
+// Observation only: the signature decision is still made by production code.
+// Keep the last Method per thread so a failure prints bounded, actionable metadata.
+static _Thread_local Method observedMethod;
+static void describeObservedMethod(void) {
+    if (!observedMethod) return;
+    const char *encoding=method_getTypeEncoding(observedMethod);
+    unsigned count=method_getNumberOfArguments(observedMethod);
+    char *result=method_copyReturnType(observedMethod);
+    fprintf(stderr,"LAST METHOD encoding=%s arity=%u return=%s\n",
+        encoding ? encoding : "<null>",count,result ? result : "<null>");
+    free(result);
+    for (unsigned i=0;i<count && i<8;++i) {
+        char *type=method_copyArgumentType(observedMethod,i);
+        fprintf(stderr,"  argument[%u]=%s\n",i,type ? type : "<null>");
+        free(type);
+    }
+}
+static BOOL observeMethodMatches(Class cls, SEL selector, const char *result,
+                                 const char *const *arguments, unsigned count) {
+    observedMethod=cls && selector ? class_getInstanceMethod(cls,selector) : NULL;
+    return WCKMethodMatches(cls,selector,result,arguments,count);
+}
+
 static atomic_uint checks;
 #define CHECK_ID(tag, expr) do { atomic_fetch_add(&checks,1); if (!(expr)) { \
     fprintf(stderr, "RUNTIME ASSERT[%s] line %d: %s\n", tag, __LINE__, #expr); \
+    describeObservedMethod(); \
     exit(86); } } while (0)
 
 static atomic_uint hookCalls, resolveCalls, originalCalls, replacementCalls, otherCalls, foreignCalls, albumCalls;
@@ -180,57 +205,67 @@ static dispatch_block_t blockReturn(id receiver, SEL selector) { return ^{}; }
 static Class signatureFixture(void) {
     Class cls=objc_allocateClassPair(NSObject.class,"WCKRuntimeSignatureFixture",0);
     CHECK_ID("fixture.signature-class",cls!=Nil);
-    CHECK_ID("fixture.annotated",class_addMethod(cls,NSSelectorFromString(@"annotated:"),(IMP)annotatedObject,"@\"NSString\"@:@\"NSObject\""));
+    // Apple Method metadata uses plain @. Quoted object class names are not
+    // consumed by objc4's Method parser; test those separately in the C policy.
+    CHECK_ID("fixture.object",class_addMethod(cls,NSSelectorFromString(@"annotated:"),(IMP)annotatedObject,"@@:@"));
+    CHECK_ID("fixture.malformed-annotation",class_addMethod(cls,NSSelectorFromString(@"malformedAnnotated:"),(IMP)annotatedObject,"@\"NSString\"@:@\"NSObject\""));
     CHECK_ID("fixture.block",class_addMethod(cls,NSSelectorFromString(@"block:"),(IMP)blockArgument,"v@:@?"));
     CHECK_ID("fixture.block-return",class_addMethod(cls,NSSelectorFromString(@"blockValue"),(IMP)blockReturn,"@?@:"));
     CHECK_ID("fixture.qualified-block",class_addMethod(cls,NSSelectorFromString(@"qualifiedBlock:"),(IMP)blockArgument,"v@:r@?"));
-    for (const char *q="rnNoORV";*q;++q) {
+    for (const char *q="rnNoOV";*q;++q) {
         NSString *name=[NSString stringWithFormat:@"pointer_%c:",*q];
         NSString *types=[NSString stringWithFormat:@"v@:%c^i",*q];
         CHECK_ID("fixture.qualified-pointer",class_addMethod(cls,NSSelectorFromString(name),(IMP)pointerArgument,types.UTF8String));
     }
+    // R is accepted as a qualifier by the C policy, but not by objc4's Method parser.
+    CHECK_ID("fixture.malformed-byref",class_addMethod(cls,NSSelectorFromString(@"pointer_R:"),(IMP)pointerArgument,"v@:R^i"));
     objc_registerClassPair(cls); return cls;
 }
 static void signatureCases(void) {
     Class cls=WCKRuntimeFixture.class; SEL sel=@selector(value:);
     const char *integer[]={@encode(NSInteger)}, *unsignedInteger[]={@encode(NSUInteger)};
     const char *object[]={"@"}, *two[]={@encode(NSInteger),@encode(NSInteger)};
-    CHECK_ID("signature.valid",WCKMethodMatches(cls,sel,@encode(NSInteger),integer,1));
-    CHECK_ID("signature.return",!WCKMethodMatches(cls,sel,@encode(NSUInteger),integer,1));
-    CHECK_ID("signature.argument",!WCKMethodMatches(cls,sel,@encode(NSInteger),unsignedInteger,1));
-    CHECK_ID("signature.object-scalar",!WCKMethodMatches(cls,sel,@encode(NSInteger),object,1));
-    CHECK_ID("signature.arity",!WCKMethodMatches(cls,sel,@encode(NSInteger),NULL,0));
-    CHECK_ID("signature.arity-extra",!WCKMethodMatches(cls,sel,@encode(NSInteger),two,2));
-    CHECK_ID("signature.overflow",!WCKMethodMatches(cls,sel,@encode(NSInteger),integer,UINT_MAX));
-    CHECK_ID("signature.overflow-minus-one",!WCKMethodMatches(cls,sel,@encode(NSInteger),integer,UINT_MAX-1));
-    CHECK_ID("signature.zero-arguments",WCKMethodMatches(cls,@selector(booleanValue),@encode(BOOL),NULL,0));
+    CHECK_ID("signature.valid",observeMethodMatches(cls,sel,@encode(NSInteger),integer,1));
+    CHECK_ID("signature.return",!observeMethodMatches(cls,sel,@encode(NSUInteger),integer,1));
+    CHECK_ID("signature.argument",!observeMethodMatches(cls,sel,@encode(NSInteger),unsignedInteger,1));
+    CHECK_ID("signature.object-scalar",!observeMethodMatches(cls,sel,@encode(NSInteger),object,1));
+    CHECK_ID("signature.arity",!observeMethodMatches(cls,sel,@encode(NSInteger),NULL,0));
+    CHECK_ID("signature.arity-extra",!observeMethodMatches(cls,sel,@encode(NSInteger),two,2));
+    CHECK_ID("signature.overflow",!observeMethodMatches(cls,sel,@encode(NSInteger),integer,UINT_MAX));
+    CHECK_ID("signature.overflow-minus-one",!observeMethodMatches(cls,sel,@encode(NSInteger),integer,UINT_MAX-1));
+    CHECK_ID("signature.zero-arguments",observeMethodMatches(cls,@selector(booleanValue),@encode(BOOL),NULL,0));
     const char *range[]={@encode(NSRange)}, *wrongRange[]={"{WCKWrongRange=QQ}"};
-    CHECK_ID("signature.struct",WCKMethodMatches(cls,@selector(takeRange:),"v",range,1));
-    CHECK_ID("signature.struct-distinct",!WCKMethodMatches(cls,@selector(takeRange:),"v",wrongRange,1));
+    CHECK_ID("signature.struct",observeMethodMatches(cls,@selector(takeRange:),"v",range,1));
+    CHECK_ID("signature.struct-distinct",!observeMethodMatches(cls,@selector(takeRange:),"v",wrongRange,1));
 }
 static void blockObjectCases(void) {
     Class cls=signatureFixture(); const char *object[]={"@"}, *block[]={"@?"};
-    CHECK_ID("signature.annotated-object",WCKMethodMatches(cls,NSSelectorFromString(@"annotated:"),"@",object,1));
-    CHECK_ID("signature.block-argument",!WCKMethodMatches(cls,NSSelectorFromString(@"block:"),"v",object,1));
-    CHECK_ID("signature.block-positive",WCKMethodMatches(cls,NSSelectorFromString(@"block:"),"v",block,1));
-    CHECK_ID("signature.object-not-block",!WCKMethodMatches(cls,NSSelectorFromString(@"annotated:"),"@",block,1));
-    CHECK_ID("signature.block-return",!WCKMethodMatches(cls,NSSelectorFromString(@"blockValue"),"@",NULL,0));
-    CHECK_ID("signature.block-return-positive",WCKMethodMatches(cls,NSSelectorFromString(@"blockValue"),"@?",NULL,0));
-    CHECK_ID("signature.qualified-block",!WCKMethodMatches(cls,NSSelectorFromString(@"qualifiedBlock:"),"v",object,1));
+    CHECK_ID("signature.object",observeMethodMatches(cls,NSSelectorFromString(@"annotated:"),"@",object,1));
+    CHECK_ID("signature.annotated-return-policy",WCKTypeMatches("@\"NSString\"","@"));
+    CHECK_ID("signature.annotated-argument-policy",WCKTypeMatches("@\"NSObject\"","@"));
+    CHECK_ID("signature.malformed-annotation",!observeMethodMatches(cls,NSSelectorFromString(@"malformedAnnotated:"),"@",object,1));
+    CHECK_ID("signature.block-argument",!observeMethodMatches(cls,NSSelectorFromString(@"block:"),"v",object,1));
+    CHECK_ID("signature.block-positive",observeMethodMatches(cls,NSSelectorFromString(@"block:"),"v",block,1));
+    CHECK_ID("signature.object-not-block",!observeMethodMatches(cls,NSSelectorFromString(@"annotated:"),"@",block,1));
+    CHECK_ID("signature.block-return",!observeMethodMatches(cls,NSSelectorFromString(@"blockValue"),"@",NULL,0));
+    CHECK_ID("signature.block-return-positive",observeMethodMatches(cls,NSSelectorFromString(@"blockValue"),"@?",NULL,0));
+    CHECK_ID("signature.qualified-block",!observeMethodMatches(cls,NSSelectorFromString(@"qualifiedBlock:"),"v",object,1));
 }
 static void qualifierCases(void) {
     Class cls=signatureFixture(); const char *pointer[]={@encode(int *)}, *wrong[]={@encode(long long *)};
-    for (const char *q="rnNoORV";*q;++q) {
+    CHECK_ID("signature.byref-policy",WCKTypeMatches("R^i",@encode(int *)));
+    CHECK_ID("signature.malformed-byref",!observeMethodMatches(cls,NSSelectorFromString(@"pointer_R:"),"v",pointer,1));
+    for (const char *q="rnNoOV";*q;++q) {
         SEL sel=NSSelectorFromString([NSString stringWithFormat:@"pointer_%c:",*q]);
-        CHECK_ID("signature.qualifier",WCKMethodMatches(cls,sel,"v",pointer,1));
-        CHECK_ID("signature.qualifier-not-wildcard",!WCKMethodMatches(cls,sel,"v",wrong,1));
+        CHECK_ID("signature.qualifier",observeMethodMatches(cls,sel,"v",pointer,1));
+        CHECK_ID("signature.qualifier-not-wildcard",!observeMethodMatches(cls,sel,"v",wrong,1));
     }
 }
 static void missingCases(void) {
     Class cls=WCKRuntimeFixture.class; SEL sel=@selector(value:), missing=NSSelectorFromString(@"absentMethod:");
     IMP old=(IMP)sentinel; const char *args[]={@encode(NSInteger)};
-    CHECK_ID("missing.class-match",!WCKMethodMatches(Nil,sel,@encode(NSInteger),args,1));
-    CHECK_ID("missing.selector-match",!WCKMethodMatches(cls,NULL,@encode(NSInteger),args,1));
+    CHECK_ID("missing.class-match",!observeMethodMatches(Nil,sel,@encode(NSInteger),args,1));
+    CHECK_ID("missing.selector-match",!observeMethodMatches(cls,NULL,@encode(NSInteger),args,1));
     CHECK_ID("missing.class-install",!installInteger(Nil,sel,(IMP)replacement,&old));
     expectStatus(Nil,sel,@"target_missing");
     CHECK_ID("missing.selector-install",!installInteger(cls,missing,(IMP)replacement,&old));
@@ -243,11 +278,11 @@ static void missingCases(void) {
 static void invalidCases(void) {
     Class cls=WCKRuntimeFixture.class; SEL sel=@selector(value:); IMP old=(IMP)sentinel;
     const char *args[]={@encode(NSInteger)}, *nullType[]={NULL}, *emptyType[]={""};
-    CHECK_ID("invalid.return-null",!WCKMethodMatches(cls,sel,NULL,args,1));
-    CHECK_ID("invalid.return-empty",!WCKMethodMatches(cls,sel,"",args,1));
-    CHECK_ID("invalid.arguments-null",!WCKMethodMatches(cls,sel,@encode(NSInteger),NULL,1));
-    CHECK_ID("invalid.argument-null",!WCKMethodMatches(cls,sel,@encode(NSInteger),nullType,1));
-    CHECK_ID("invalid.argument-empty",!WCKMethodMatches(cls,sel,@encode(NSInteger),emptyType,1));
+    CHECK_ID("invalid.return-null",!observeMethodMatches(cls,sel,NULL,args,1));
+    CHECK_ID("invalid.return-empty",!observeMethodMatches(cls,sel,"",args,1));
+    CHECK_ID("invalid.arguments-null",!observeMethodMatches(cls,sel,@encode(NSInteger),NULL,1));
+    CHECK_ID("invalid.argument-null",!observeMethodMatches(cls,sel,@encode(NSInteger),nullType,1));
+    CHECK_ID("invalid.argument-empty",!observeMethodMatches(cls,sel,@encode(NSInteger),emptyType,1));
     CHECK_ID("invalid.replacement",!installInteger(cls,sel,NULL,&old));
     expectStatus(cls,sel,@"install_failed.invalid_argument");
     CHECK_ID("invalid.original-slot",!installInteger(cls,sel,(IMP)replacement,NULL));

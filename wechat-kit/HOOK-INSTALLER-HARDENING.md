@@ -87,6 +87,12 @@ Foundation model / not real WeChat / not device validation
 
 [现有 CI](<../.github/workflows/build-wechatkit.yml>)在同一候选 commit 上跑源码合同、生产安装器模型/变异、既有功能模型，并由 Apple SDK 编译 arm64/arm64e、链接/签名/打包，上传新安装器测试 JSON 与 deb。
 
+## 首轮 CI 夹具纠正
+
+[首轮 run 40914745333](<https://github.com/doimty/okok-tweak/actions/runs/40914745333>) 编译了安装器和夹具，但在合成对象类型用例失败。原因不是要关闭生产签名检查：Apple [Method 编码解析器](<https://github.com/apple-oss-distributions/objc4/blob/main/runtime/objc-typeencoding.mm>) 不把带类名注释的 `@"Class"` 合成串作为一个完整方法类型处理，也不支持其 `R` 分支作为 Method 限定符。
+
+修正仅调整夹具：方法元数据使用普通对象 `@` 与解析器支持的限定符；带类名注释/`R` 的规范化直接测试现有 C 策略，并单独断言不合法方法元数据被保守拒绝。新增按线程记录的 Method 诊断，断言失败时输出有界的 encoding、参数数量和各类型。生产安装器没有为了让测试变绿而放松检查。
+
 ## 不在本轮完成范围
 
 - 目标微信进程中的注入链、真实 selector 参数语义、页面效果、稳定性。
