@@ -8,11 +8,9 @@
 // paths. Component families can be opted in and are traversed with a view cap.
 static char sCornerStateKey;
 static NSHashTable<UITableViewCell *> *sCornerCells; // weak, main-thread only
-static _Thread_local NSUInteger sCornerFrameDepth, sCornerLayoutDepth, sCornerReuseDepth;
-static _Thread_local __unsafe_unretained UITableViewCell *sCornerFrameCell;
+static _Thread_local NSUInteger sCornerLayoutDepth, sCornerReuseDepth;
 static _Thread_local __unsafe_unretained UITableViewCell *sCornerLayoutCell;
 static _Thread_local __unsafe_unretained UITableViewCell *sCornerReuseCell;
-static _Thread_local __unsafe_unretained UITableViewCell *sCornerInternalFrameCell;
 static BOOL sCornerRefreshQueued;
 
 @interface WCKCornerLayerState : NSObject
@@ -26,19 +24,19 @@ static BOOL sCornerRefreshQueued;
 @implementation WCKCornerLayerState @end
 
 @interface WCKCornerState : NSObject
-@property(nonatomic, weak) UITableView *table;
-@property(nonatomic, weak) UIView *superview;
-@property(nonatomic) CGRect hostFrame, appliedFrame;
-@property(nonatomic) BOOL ownsFrame, ownsFill, ownsViewFill;
+@property(nonatomic) BOOL ownsFill, ownsViewFill, ownsSelected, createdBackground;
 @property(nonatomic, strong) UIColor *hostFill, *appliedFill;
 @property(nonatomic, strong) UIColor *hostViewFill, *appliedViewFill;
+@property(nonatomic, weak) UIView *hostBackgroundView;
+@property(nonatomic) CGRect hostSelectedFrame;
+@property(nonatomic) CGFloat fixedSelectedRadius;
+@property(nonatomic) CACornerMask fixedSelectedMask;
+@property(nonatomic, weak) UIView *fixedSelectedView;
 @property(nonatomic, strong) NSMutableArray<WCKCornerLayerState *> *layers;
 @end
 @implementation WCKCornerState @end
 
-typedef void (*WCKCornerFrameIMP)(id, SEL, CGRect);
 typedef void (*WCKCornerVoidIMP)(id, SEL);
-static WCKCornerFrameIMP sMMFrame, sMainFrame;
 static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse;
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
@@ -427,11 +425,17 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
     [state.layers removeAllObjects];
     if (state.ownsFill && WCKCornerObjectsEqual(cell.backgroundColor, state.appliedFill))
         cell.backgroundColor = state.hostFill;
-    if (state.ownsViewFill && cell.backgroundView &&
-        WCKCornerObjectsEqual(cell.backgroundView.backgroundColor, state.appliedViewFill))
-        cell.backgroundView.backgroundColor = state.hostViewFill;
+    UIView *cardView = state.hostBackgroundView;
+    if (state.ownsViewFill && cardView && cell.backgroundView == cardView &&
+        WCKCornerObjectsEqual(cardView.backgroundColor, state.appliedViewFill))
+        cardView.backgroundColor = state.hostViewFill;
+    if (state.ownsSelected && state.fixedSelectedView && cell.selectedBackgroundView == state.fixedSelectedView)
+        state.fixedSelectedView.frame = state.hostSelectedFrame;
+    // The created card view stays attached across layout passes; detaching it is
+    // explicit (feature off or reuse) so a card never flickers between frames.
     state.ownsFill = NO; state.hostFill = nil; state.appliedFill = nil;
     state.ownsViewFill = NO; state.hostViewFill = nil; state.appliedViewFill = nil;
+    state.ownsSelected = NO; state.hostSelectedFrame = CGRectZero;
 }
 static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
                                  CGFloat width, UIColor *border, WCKCornerState *state) {
@@ -451,76 +455,24 @@ static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
     }
     [state.layers addObject:saved];
 }
-static CGRect WCKCornerFrame(UITableViewCell *cell, CGRect incoming, NSDictionary *snapshot,
-                              BOOL enabled, WCKCornerState **stateOut) {
-    WCKCornerState *state = WCKCornerGetState(cell, NO);
-    UITableView *table = WCKCornerTable(cell);
-    CGRect host = incoming;
-    UIView *parent = cell.superview;
-    // Identical repeated layouts use our remembered baseline. If the cell moves
-    // to a new wrapper/table, translate that baseline between parent coordinate
-    // systems; never feed the old already-inset frame into the new table.
-    if (state.ownsFrame && state.superview == parent &&
-        CGRectEqualToRect(incoming, state.appliedFrame)) {
-        // A cell can move between tables that share the same coordinate
-        // parent. Recover the prior host frame even when table identity changed.
-        host = state.hostFrame;
-    } else if (state.ownsFrame && state.superview && parent && state.superview != parent) {
-        // appliedFrame is stored in the old parent's coordinate space. Convert
-        // it before comparing with the new parent's incoming frame; otherwise a
-        // translated wrapper makes the equality check fail and freezes the inset.
-        @try {
-            CGRect appliedInParent = [state.superview convertRect:state.appliedFrame toView:parent];
-            CGRect hostInParent = [state.superview convertRect:state.hostFrame toView:parent];
-            if (WCKCornerFiniteRect(appliedInParent) && WCKCornerFiniteRect(hostInParent) &&
-                CGRectEqualToRect(incoming, appliedInParent)) host = hostInParent;
-        } @catch (__unused NSException *exception) { host = incoming; }
+// The card is painted on backgroundView. cell.frame and contentView belong to
+// the host: moving either one shifts text/avatars inside the card.
+static UIView *WCKCornerCardView(UITableViewCell *cell, WCKCornerState *state) {
+    UIView *back = cell.backgroundView;
+    if (!back) {
+        back = [UIView new];
+        cell.backgroundView = back;
+        state.createdBackground = YES;
     }
-    if (!WCKCornerFiniteRect(host)) host = incoming;
-    if (state) state.ownsFrame = NO;
-    if (!enabled || !WCKCornerFiniteRect(host) || !WCKCornerContext(cell, snapshot, &table, NULL, NULL)) {
-        if (stateOut) *stateOut = state;
-        return host;
-    }
-    CGRect bounds = table.bounds;
-    if (!WCKCornerFiniteRect(bounds) || !parent) { if (stateOut) *stateOut = state; return host; }
-    // table.bounds and cell.frame may use different coordinate systems when the
-    // host inserts a wrapper view. Convert before applying the horizontal inset.
-    CGRect visible = [table convertRect:bounds toView:parent];
-    if (!WCKCornerFiniteRect(visible)) { if (stateOut) *stateOut = state; return host; }
-    CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
-    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
-    CGFloat left = MAX(CGRectGetMinX(host), CGRectGetMinX(visible) + margin);
-    CGFloat right = MIN(CGRectGetMaxX(host), CGRectGetMaxX(visible) - margin);
-    CGRect desired = host;
-    if (margin > 0 && right - left > 1) { desired.origin.x = left; desired.size.width = right - left; }
-    // Vertical gap belongs to the cell frame too; otherwise neighbouring cards
-    // share an edge and their rounded corners disappear.
-    if (spacing > 0 && CGRectGetHeight(host) > spacing + 1) {
-        desired.origin.y = CGRectGetMinY(host) + spacing / 2.0;
-        desired.size.height = CGRectGetHeight(host) - spacing;
-    }
-    if (!state && !CGRectEqualToRect(desired, host)) state = WCKCornerGetState(cell, YES);
-    if (state) {
-        state.hostFrame = host; state.appliedFrame = desired; state.table = table; state.superview = parent;
-        state.ownsFrame = !CGRectEqualToRect(desired, host);
-    }
-    if (stateOut) *stateOut = state;
-    return desired;
+    state.hostBackgroundView = back;
+    return back;
 }
-static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKCornerFrameIMP original) {
-    if (!NSThread.isMainThread || sCornerInternalFrameCell == cell ||
-        (sCornerFrameDepth && sCornerFrameCell == cell)) {
-        original(cell, cmd, frame); return;
-    }
-    UITableViewCell *previous = sCornerFrameCell; sCornerFrameCell = cell;
-    ++sCornerFrameDepth;
-    @try {
-        CGRect desired = frame;
-        @try { desired = WCKCornerFrame(cell, frame, WCKSettings.shared.snapshot, WCKEnabled(@"corners"), NULL); }
-        @catch (__unused NSException *exception) { /* Preparation cannot swallow the original call. */ }
-        original(cell, cmd, desired);
-    } @finally { --sCornerFrameDepth; sCornerFrameCell = previous; }
+static void WCKCornerDetachCard(UITableViewCell *cell, WCKCornerState *state) {
+    if (!state) return;
+    if (state.createdBackground && cell.backgroundView == state.hostBackgroundView)
+        cell.backgroundView = nil;
+    state.createdBackground = NO;
+    state.hostBackgroundView = nil;
 }
 static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP original) {
     if (!NSThread.isMainThread || (sCornerLayoutDepth && sCornerLayoutCell == cell)) {
@@ -529,46 +481,69 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
     UITableViewCell *previous = sCornerLayoutCell; sCornerLayoutCell = cell;
     ++sCornerLayoutDepth;
     @try {
+        // The host lays out first and keeps complete ownership of its content.
+        original(cell, cmd);
         @try {
+            WCKCornerState *state = WCKCornerGetState(cell, NO);
+            if (!WCKEnabled(@"corners")) {
+                WCKCornerRestoreStyle(cell, state);
+                WCKCornerDetachCard(cell, state);
+                return;
+            }
+            NSDictionary *snapshot = WCKSettings.shared.snapshot;
+            UITableView *table = nil; NSIndexPath *path = nil; NSInteger rows = 0;
+            if (!WCKCornerContext(cell, snapshot, &table, &path, &rows) ||
+                !WCKCornerFiniteRect(cell.bounds)) {
+                WCKCornerRestoreStyle(cell, state);
+                WCKCornerDetachCard(cell, state);
+                return;
+            }
             if (!sCornerCells) sCornerCells = [NSHashTable weakObjectsHashTable];
             [sCornerCells addObject:cell];
-            WCKCornerRestoreStyle(cell, WCKCornerGetState(cell, NO));
-            CGRect desired = WCKCornerFrame(cell, cell.frame, WCKSettings.shared.snapshot,
-                                             WCKEnabled(@"corners"), NULL);
-            if (!CGRectEqualToRect(cell.frame, desired)) {
-                UITableViewCell *previousInternal = sCornerInternalFrameCell; sCornerInternalFrameCell = cell;
-                @try { cell.frame = desired; }
-                @finally { sCornerInternalFrameCell = previousInternal; }
-            }
-        } @catch (__unused NSException *exception) { /* Still run the host's layout. */ }
-        original(cell, cmd); // Keep contentView layout entirely under the host.
-        @try {
-            if (!WCKEnabled(@"corners")) return;
-            NSDictionary *snapshot = WCKSettings.shared.snapshot;
-            UITableView *table = nil;
-            if (!WCKCornerContext(cell, snapshot, &table, NULL, NULL) ||
-                !WCKCornerFiniteRect(cell.bounds)) return;
-            WCKCornerState *state = WCKCornerGetState(cell, YES);
-            // Every row is its own card; row-index masks left middle rows square.
+            state = WCKCornerGetState(cell, YES);
+            WCKCornerRestoreStyle(cell, state);
+            CGRect bounds = cell.bounds;
+            CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
+            CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
+            margin = MIN(margin, MAX(0.0, bounds.size.width / 2.0 - 1.0));
+            // One card per section: only the first and last rows are rounded,
+            // and the group keeps half the spacing above and below it.
+            BOOL first = path.row == 0, last = path.row == rows - 1;
+            CGFloat top = first ? spacing / 2.0 : 0.0;
+            CGFloat bottom = last ? spacing / 2.0 : 0.0;
+            CGRect card = CGRectMake(margin, top, bounds.size.width - 2.0 * margin,
+                                     bounds.size.height - top - bottom);
+            if (!WCKCornerFiniteRect(card)) return;
             CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
-            radius = MIN(radius, MIN(cell.bounds.size.width, cell.bounds.size.height) / 2.0);
-            NSUInteger mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner |
-                kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
-            if (radius <= 0) mask = 0;
+            radius = MIN(radius, MIN(card.size.width, card.size.height) / 2.0);
+            CACornerMask mask = 0;
+            if (first) mask |= kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
+            if (last) mask |= kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
+            if (radius <= 0.5) mask = 0;
             CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerStroke", 0, 4);
             UIColor *border = WCKCornerFill(snapshot, @"globalCornerStrokeColor");
-            WCKCornerStyleLayer(cell.layer, radius, mask, width, border, state);
-            WCKCornerStyleLayer(cell.backgroundView.layer, radius, mask, 0, nil, state);
-            WCKCornerStyleLayer(cell.selectedBackgroundView.layer, radius, mask, 0, nil, state);
-            // An empty setting means the card colour this module supplies, not
-            // "leave the host transparent" - a transparent layer shows no corners.
+            UIView *back = WCKCornerCardView(cell, state);
+            WCKCornerStyleLayer(back.layer, radius, mask, width, border, state);
+            back.frame = card;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
-            state.hostFill = cell.backgroundColor; state.appliedFill = fill; state.ownsFill = YES;
-            cell.backgroundColor = fill;
-            UIView *back = cell.backgroundView;
-            if (back) {
-                state.hostViewFill = back.backgroundColor; state.appliedViewFill = fill;
-                state.ownsViewFill = YES; back.backgroundColor = fill;
+            state.hostViewFill = back.backgroundColor;
+            state.appliedViewFill = fill; state.ownsViewFill = YES;
+            back.backgroundColor = fill;
+            if (!state.ownsFill) {
+                state.hostFill = cell.backgroundColor;
+                state.appliedFill = UIColor.clearColor;
+                state.ownsFill = YES;
+            }
+            cell.backgroundColor = UIColor.clearColor;
+            UIView *selected = cell.selectedBackgroundView;
+            if (selected) {
+                if (!state.ownsSelected) {
+                    state.fixedSelectedView = selected;
+                    state.hostSelectedFrame = selected.frame;
+                    state.ownsSelected = YES;
+                }
+                selected.frame = card;
+                WCKCornerStyleLayer(selected.layer, radius, mask, 0, nil, state);
             }
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
@@ -586,40 +561,13 @@ static void WCKCornerReuse(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP orig
         @try {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
             WCKCornerRestoreStyle(cell, state);
-            // Restore the frame only while the cell is offscreen; restoring a
-            // visible cell makes the card snap to full width and back.
-            if (cell.window == nil && state.ownsFrame) {
-                CGRect restoreFrame = state.hostFrame;
-                BOOL stillOwned = CGRectEqualToRect(cell.frame, state.appliedFrame);
-                if (state.superview != cell.superview && state.superview && cell.superview) {
-                    // If the host reparented a cell before reuse, only restore
-                    // when its current frame is still our translated inset.
-                    @try {
-                        CGRect appliedInParent = [state.superview convertRect:state.appliedFrame toView:cell.superview];
-                        CGRect hostInParent = [state.superview convertRect:state.hostFrame toView:cell.superview];
-                        stillOwned = WCKCornerFiniteRect(appliedInParent) && WCKCornerFiniteRect(hostInParent) &&
-                            CGRectEqualToRect(cell.frame, appliedInParent);
-                        if (stillOwned) restoreFrame = hostInParent;
-                    } @catch (__unused NSException *exception) { stillOwned = NO; }
-                } else if (state.superview != cell.superview && cell.superview) {
-                    // The old coordinate space is gone; do not overwrite a
-                    // potentially host-authored frame in the new parent.
-                    stillOwned = NO;
-                }
-                if (stillOwned) {
-                    UITableViewCell *previousInternal = sCornerInternalFrameCell; sCornerInternalFrameCell = cell;
-                    @try { cell.frame = restoreFrame; }
-                    @finally { sCornerInternalFrameCell = previousInternal; }
-                }
-            }
+            WCKCornerDetachCard(cell, state);
             objc_setAssociatedObject(cell, &sCornerStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [sCornerCells removeObject:cell];
         } @catch (__unused NSException *exception) { /* Reuse remains a host operation. */ }
         original(cell, cmd);
     } @finally { --sCornerReuseDepth; sCornerReuseCell = previous; }
 }
-static void WCKMMCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMMFrame); }
-static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMainFrame); }
 static void WCKMMCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sMMLayout); }
 static void WCKMainCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sMainLayout); }
 static void WCKMMCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMMReuse); }
@@ -651,10 +599,8 @@ void WCKRefreshCorners(void) {
 void WCKInstallCorners(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        // cell.frame and setFrame: stay untouched so host content never shifts.
         Class base = NSClassFromString(@"MMTableViewCell");
-        const char *frameArgs[] = {@encode(CGRect)};
-        BOOL frame = WCKInstallHook(base, @selector(setFrame:), (IMP)WCKMMCornerFrame,
-                                   (IMP *)&sMMFrame, "v", frameArgs, 1);
         BOOL layout = WCKInstallHook(base, @selector(layoutSubviews), (IMP)WCKMMCornerLayout,
                                     (IMP *)&sMMLayout, "v", NULL, 0);
         BOOL reuse = WCKInstallHook(base, @selector(prepareForReuse), (IMP)WCKMMCornerReuse,
@@ -665,13 +611,11 @@ void WCKInstallCorners(void) {
         Class main = NSClassFromString(@"NewMainFrameCell");
         BOOL mainReady = NO;
         if (main) {
-            BOOL mf = WCKInstallHook(main, @selector(setFrame:), (IMP)WCKMainCornerFrame,
-                                    (IMP *)&sMainFrame, "v", frameArgs, 1);
             BOOL ml = WCKInstallHook(main, @selector(layoutSubviews), (IMP)WCKMainCornerLayout,
                                     (IMP *)&sMainLayout, "v", NULL, 0);
             BOOL mr = WCKInstallHook(main, @selector(prepareForReuse), (IMP)WCKMainCornerReuse,
                                     (IMP *)&sMainReuse, "v", NULL, 0);
-            mainReady = mf && ml && mr;
+            mainReady = ml && mr;
         }
         BOOL viewMoved = WCKInstallHook(UIView.class, @selector(didMoveToWindow),
             (IMP)WCKCornerViewDidMove, (IMP *)&sViewDidMoveToWindow, "v", NULL, 0);
@@ -703,7 +647,7 @@ void WCKInstallCorners(void) {
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
         WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
-        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady
+        WCKSetModuleStatus(@"corners", layout && reuse && mainReady
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
