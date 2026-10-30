@@ -42,6 +42,7 @@ static BOOL sCornerRefreshQueued;
 @property(nonatomic) CACornerMask fixedSelectedMask;
 @property(nonatomic, weak) UIView *fixedSelectedView;
 @property(nonatomic) CGRect appliedBounds;
+@property(nonatomic) CGRect appliedFrame;
 @property(nonatomic) CGFloat appliedRadius;
 @property(nonatomic) NSUInteger appliedCorners;
 @property(nonatomic, strong) NSMutableArray<WCKCornerLayerState *> *layers;
@@ -514,6 +515,7 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
         state.fixedSelectedView.frame = state.hostSelectedFrame;
     if (state.ownsMask && cell.layer.mask == state.maskLayer) cell.layer.mask = state.hostMask;
     state.ownsMask = NO; state.maskLayer = nil; state.hostMask = nil;
+    state.appliedFrame = CGRectZero;
     if (state.ownsHostRadius) {
         cell.layer.cornerRadius = state.hostCellRadius;
         if (cell.backgroundView == state.hostBgView)
@@ -558,8 +560,16 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
     @try {
         CGRect target = frame;
         @try {
-            if (WCKEnabled(@"corners"))
+            if (WCKEnabled(@"corners")) {
+                WCKCornerState *state = WCKCornerGetState(cell, NO);
+                // The host can hand back the frame it just received. Insetting
+                // again would walk the row left and clip its leading icon.
+                if (state && CGRectEqualToRect(state.appliedFrame, frame)) {
+                    original(cell, cmd, frame); return;
+                }
                 target = WCKCornerTargetFrame(cell, frame, WCKSettings.shared.snapshot);
+                if (state) state.appliedFrame = target;
+            }
         } @catch (__unused NSException *exception) { target = frame; }
         // Depth stays raised so a subclass trampoline forwards instead of
         // insetting the same row twice.
@@ -675,7 +685,7 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             cell.backgroundView.layer.cornerRadius = 0;
             cell.contentView.layer.cornerRadius = 0;
             state.appliedBounds = bounds; state.appliedRadius = radius;
-            state.appliedCorners = corners;
+            state.appliedCorners = corners; state.appliedFrame = cell.frame;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
             if (!state.ownsFill) {
                 state.hostFill = cell.backgroundColor;
