@@ -51,9 +51,8 @@ static BOOL sCornerRefreshQueued;
 
 typedef void (*WCKCornerFrameIMP)(id, SEL, CGRect);
 typedef void (*WCKCornerVoidIMP)(id, SEL);
-static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame, sMultiFrame;
+static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame;
 static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse, sBaseLayout, sBaseReuse;
-static WCKCornerVoidIMP sMultiLayout, sMultiReuse;
 static WCKCornerVoidIMP sContentLayout;
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
@@ -569,7 +568,12 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
                     original(cell, cmd, frame); return;
                 }
                 target = WCKCornerTargetFrame(cell, frame, WCKSettings.shared.snapshot);
-                if (state) state.appliedFrame = target;
+                if (!CGRectEqualToRect(target, frame)) {
+                    if (!state) state = WCKCornerGetState(cell, YES);
+                    state.appliedFrame = target;
+                } else if (state) {
+                    state.appliedFrame = CGRectZero;
+                }
             }
         } @catch (__unused NSException *exception) { target = frame; }
         // Depth stays raised so a subclass trampoline forwards instead of
@@ -747,16 +751,10 @@ static void WCKMMCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMMReuse); }
 static void WCKMainCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMainReuse); }
 static void WCKMMCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMMFrame); }
 static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMainFrame); }
-// Base class trampolines: subclasses that override the cell methods without
-// calling super would otherwise never reach this path.
+// Base trampolines only see calls that reach UITableViewCell's implementation.
 static void WCKBaseCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sBaseLayout); }
 static void WCKBaseCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sBaseReuse); }
 static void WCKBaseCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sBaseFrame); }
-// Home cells inherit through MMMultiMenuTableViewCell; hooking the middle class
-// keeps layout/restore reachable even when a subclass forwards only to it.
-static void WCKMultiCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sMultiLayout); }
-static void WCKMultiCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMultiReuse); }
-static void WCKMultiCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMultiFrame); }
 static void WCKCornerContentLayout(UIView *view, SEL cmd) {
     sContentLayout(view, cmd);
     if (!NSThread.isMainThread) return;
@@ -806,9 +804,9 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMMLayout, "v", NULL, 0);
         BOOL reuse = WCKInstallHook(base, @selector(prepareForReuse), (IMP)WCKMMCornerReuse,
                                    (IMP *)&sMMReuse, "v", NULL, 0);
-        // NewMainFrameCell does not inherit MMTableViewCell in the target host;
-        // install its own trampolines even for selectors inherited elsewhere.
-        // MSHookMessageEx/class-local registration keeps this path isolated.
+        // Hook the named home-cell class when present. The 8.0.80 headers show
+        // it inherits from MMTableViewCell through multiple intermediate classes;
+        // older host versions may differ.
         Class main = NSClassFromString(@"NewMainFrameCell");
         BOOL mainReady = NO;
         if (main) {
@@ -820,19 +818,8 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMainReuse, "v", NULL, 0);
             mainReady = mf && ml && mr;
         }
-        BOOL multiReady = NO;
-        Class multi = NSClassFromString(@"MMMultiMenuTableViewCell");
-        if (multi) {
-            BOOL f = WCKInstallHook(multi, @selector(setFrame:), (IMP)WCKMultiCornerFrame,
-                                    (IMP *)&sMultiFrame, "v", frameArgs, 1);
-            BOOL l = WCKInstallHook(multi, @selector(layoutSubviews), (IMP)WCKMultiCornerLayout,
-                                    (IMP *)&sMultiLayout, "v", NULL, 0);
-            BOOL r = WCKInstallHook(multi, @selector(prepareForReuse), (IMP)WCKMultiCornerReuse,
-                                    (IMP *)&sMultiReuse, "v", NULL, 0);
-            multiReady = f && l && r;
-        }
-        // Cover cells whose subclasses override the methods above without
-        // calling super: the base class and the content view still run.
+        // Base-class hooks cover only calls that actually reach that class.
+        // A content-view hook below is an optional fallback, not a guarantee.
         BOOL baseReady = NO;
         if (UITableViewCell.class) {
             BOOL bf = WCKInstallHook(UITableViewCell.class, @selector(setFrame:),
@@ -884,8 +871,7 @@ void WCKInstallCorners(void) {
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
         WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
-        BOOL multiOptional = !NSClassFromString(@"MMMultiMenuTableViewCell") || multiReady;
-        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady && multiOptional
+        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
@@ -897,24 +883,21 @@ void WCKInstallCorners(void) {
     });
 }
 void WCKInstallCornersLate(void) {
-    // The home list may load its cell class after the dylib; retry once, with
-    // statically stored originals (never a per-instance lookup that can miss).
+    // Keep the original slots live while the backend publishes each hook. Even
+    // an unverified installation may leave its replacement active.
     static BOOL done = NO;
     if (done) return;
     Class main = NSClassFromString(@"NewMainFrameCell");
     if (!main) return;
     done = YES;
     const char *frameArgs[] = {@encode(CGRect)};
-    IMP original = NULL;
-    if (!sMainFrame && WCKInstallHook(main, @selector(setFrame:), (IMP)WCKMainCornerFrame,
-                                      &original, "v", frameArgs, 1) && original)
-        sMainFrame = (WCKCornerFrameIMP)original;
-    original = NULL;
-    if (!sMainLayout && WCKInstallHook(main, @selector(layoutSubviews), (IMP)WCKMainCornerLayout,
-                                       &original, "v", NULL, 0) && original)
-        sMainLayout = (WCKCornerVoidIMP)original;
-    original = NULL;
-    if (!sMainReuse && WCKInstallHook(main, @selector(prepareForReuse), (IMP)WCKMainCornerReuse,
-                                      &original, "v", NULL, 0) && original)
-        sMainReuse = (WCKCornerVoidIMP)original;
+    if (!sMainFrame)
+        WCKInstallHook(main, @selector(setFrame:), (IMP)WCKMainCornerFrame,
+                       (IMP *)&sMainFrame, "v", frameArgs, 1);
+    if (!sMainLayout)
+        WCKInstallHook(main, @selector(layoutSubviews), (IMP)WCKMainCornerLayout,
+                       (IMP *)&sMainLayout, "v", NULL, 0);
+    if (!sMainReuse)
+        WCKInstallHook(main, @selector(prepareForReuse), (IMP)WCKMainCornerReuse,
+                       (IMP *)&sMainReuse, "v", NULL, 0);
 }

@@ -115,6 +115,15 @@ class CornersContract(unittest.TestCase):
         self.assertIn('cell.layer.mask = maskLayer', body('WCKCornerApplyStyle'))
         self.assertIn('geometry.disabled-style', model)
 
+    def test_late_hooks_use_live_original_slots(self):
+        late = body('WCKInstallCornersLate')
+        for slot in ['sMainFrame', 'sMainLayout', 'sMainReuse']:
+            self.assertIn('(IMP *)&' + slot, late)
+        self.assertNotIn('&original', late)
+        for marker in ['late.published-and-called', 'late.frame-forwarded',
+                       'late.layout-forwarded', 'late.reuse-forwarded']:
+            self.assertIn(marker, model)
+
     def test_per_cell_reentrancy_guard(self):
         self.assertIn('sCornerFrameDepth', body('WCKCornerSetFrame'))
         self.assertIn('sCornerLayoutDepth && sCornerLayoutCell == cell', body('WCKCornerLayout'))

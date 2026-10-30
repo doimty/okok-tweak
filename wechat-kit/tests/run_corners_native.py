@@ -5,7 +5,7 @@ This is behavioral model execution, NOT real UIKit or WeChat. On non-Darwin,
 """
 import argparse,hashlib,json,os,re,subprocess,sys,tempfile
 from pathlib import Path
-CASES=['geometry','isolation','restore','refresh','lifetime','abi']
+CASES=['geometry','isolation','restore','refresh','lifetime','abi','late-install','late-unverified']
 VARIANTS=['baseline','baseline-overrides','disabled-feature','refresh-noop','strong-registry']
 def main():
  p=argparse.ArgumentParser(description=__doc__)

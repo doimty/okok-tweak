@@ -201,7 +201,14 @@ static NSMutableDictionary *sFixturePathInfo;
 @implementation ContactInfoViewController @end
 @implementation WCKSettingsViewController @end
 @implementation WCKUnknownViewController @end
-@implementation MMTableViewCell @end
+@implementation MMTableViewCell
+- (void)layoutSubviews { [super layoutSubviews]; }
+@end
+@implementation MMBaseMultiMenuTableViewCell
+- (void)setFrame:(CGRect)frame { [super setFrame:frame]; }
+- (void)layoutSubviews { [super layoutSubviews]; }
+- (void)prepareForReuse { [super prepareForReuse]; }
+@end
 @implementation MMMultiMenuTableViewCell @end
 @implementation UIImageView @end
 @implementation MMHeadImageView @end
@@ -220,6 +227,10 @@ static NSMutableDictionary *sFixturePathInfo;
 static WCKSettings *store;
 static NSMutableDictionary *statuses;
 static NSMutableArray<NSDictionary *> *hookTargets;
+static BOOL fixtureMainHooksUnavailable;
+static BOOL fixtureLateHookUnverified;
+static UITableViewCell *fixtureLateProbe;
+static NSUInteger fixtureLateProbeCalls;
 @interface WCKSettings (CornersPrivateStore)
 - (instancetype)initWithFileURL:(NSURL *)url;
 @end
@@ -241,12 +252,22 @@ BOOL WCKMethodMatches(Class c, SEL s, const char *r, const char *const *a, unsig
     return c && s && class_getInstanceMethod(c,s) != NULL;
 }
 BOOL WCKInstallHook(Class c, SEL s, IMP imp, IMP *old, const char *r, const char *const *a, unsigned n) {
+    if (fixtureMainHooksUnavailable && c == NewMainFrameCell.class) return NO;
     BOOL valid=WCKMethodMatches(c,s,r,a,n);
     [hookTargets addObject:@{@"class":c ? NSStringFromClass(c) : @"(nil)",
         @"selector":NSStringFromSelector(s), @"selectorPresent":@(valid)}];
     CHECK_ID("hooks.target-present",valid && imp && old);
     Method m=class_getInstanceMethod(c,s); *old=method_getImplementation(m);
     if (!class_addMethod(c,s,imp,method_getTypeEncoding(m))) method_setImplementation(m,imp);
+    // Model the backend publishing a replacement before reporting completion.
+    if (fixtureLateProbe && c == NewMainFrameCell.class) {
+        if (s == @selector(setFrame:)) [fixtureLateProbe setFrame:CGRectMake(0,0,120,40)];
+        else if (s == @selector(layoutSubviews)) [fixtureLateProbe layoutSubviews];
+        else if (s == @selector(prepareForReuse)) [fixtureLateProbe prepareForReuse];
+        else CHECK_ID("late.known-selector",NO);
+        ++fixtureLateProbeCalls;
+        if (fixtureLateHookUnverified) return NO;
+    }
     return YES;
 }
 static void setting(NSString *key, id value) {
@@ -357,6 +378,13 @@ static void geometry(void) {
 
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.frame");
+    CGRect alreadyInset=first.cell.frame;
+    setFrameExpect(first,alreadyInset,alreadyInset,"geometry.before-layout-no-double-inset");
+    CGRect resized=CGRectMake(0,120,400,60);
+    setFrameExpect(first,resized,insetFrame(resized,24,0,0),"geometry.resize");
+    alreadyInset=first.cell.frame;
+    setFrameExpect(first,alreadyInset,alreadyInset,"geometry.resize-no-double-inset");
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.after-resize");
     layout(first);
     expectStyle(first,12,top,"geometry.first-style");
     CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
@@ -495,6 +523,25 @@ static void lifetime(void) {
     drainRefresh();
 }
 
+static void lateHooks(BOOL unverified) {
+    fixtureMainHooksUnavailable=NO;
+    fixtureLateProbe=[NewMainFrameCell new];
+    fixtureLateHookUnverified=unverified;
+    fixtureLateProbeCalls=0;
+    WCKInstallCornersLate();
+    CHECK_ID("late.published-and-called",fixtureLateProbeCalls==3);
+    NSUInteger frames=fixtureLateProbe.fixtureFrameCalls;
+    NSUInteger layouts=fixtureLateProbe.fixtureLayoutCalls;
+    NSUInteger reuses=fixtureLateProbe.fixtureReuseCalls;
+    [fixtureLateProbe setFrame:CGRectMake(0,0,120,40)];
+    [fixtureLateProbe layoutSubviews];
+    [fixtureLateProbe prepareForReuse];
+    CHECK_ID("late.frame-forwarded",fixtureLateProbe.fixtureFrameCalls==frames+1);
+    CHECK_ID("late.layout-forwarded",fixtureLateProbe.fixtureLayoutCalls==layouts+1);
+    CHECK_ID("late.reuse-forwarded",fixtureLateProbe.fixtureReuseCalls==reuses+1);
+    fixtureLateProbe=nil;
+}
+
 static void abi(void) {
     CHECK_ID("hooks.nonempty",hookTargets.count>0);
     for (NSDictionary *entry in hookTargets) {
@@ -535,15 +582,19 @@ int main(int argc, char **argv) {
         statuses=[NSMutableDictionary new];
         hookTargets=[NSMutableArray new];
         defaults();
-        WCKInstallCorners();
-        CHECK_ID("install.ready",[statuses[@"corners"] isEqual:@"ready"]);
         NSString *which=[NSString stringWithUTF8String:argv[1]];
+        BOOL late=[which isEqual:@"late-install"] || [which isEqual:@"late-unverified"];
+        fixtureMainHooksUnavailable=late;
+        WCKInstallCorners();
+        if (!late) CHECK_ID("install.ready",[statuses[@"corners"] isEqual:@"ready"]);
         if ([which isEqual:@"geometry"]) geometry();
         else if ([which isEqual:@"isolation"]) isolation();
         else if ([which isEqual:@"restore"]) restore();
         else if ([which isEqual:@"refresh"]) refresh();
         else if ([which isEqual:@"lifetime"]) lifetime();
         else if ([which isEqual:@"abi"]) abi();
+        else if ([which isEqual:@"late-install"]) lateHooks(NO);
+        else if ([which isEqual:@"late-unverified"]) lateHooks(YES);
         else CHECK_ID("fixture.known-case",NO);
         NSData *data=[NSJSONSerialization dataWithJSONObject:hookTargets options:0 error:NULL];
         printf("HOOK_TARGETS %s\n",[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] UTF8String]);

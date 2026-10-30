@@ -136,7 +136,8 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @property(nonatomic, strong) UIView *view;
 @end
 @interface MMTableViewCell : UITableViewCell @end
-@interface MMMultiMenuTableViewCell : UITableViewCell @end
+@interface MMBaseMultiMenuTableViewCell : MMTableViewCell @end
+@interface MMMultiMenuTableViewCell : MMBaseMultiMenuTableViewCell @end
 @interface NewMainFrameCell : MMMultiMenuTableViewCell @end
 // Verified WeChat host classes the production hooks install onto.
 @interface MMHeadImageView : UIImageView @end
