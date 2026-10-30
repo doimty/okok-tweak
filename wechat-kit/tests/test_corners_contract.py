@@ -42,7 +42,8 @@ class CornersContract(unittest.TestCase):
         self.assertIn('@selector(setFrame:)', install)
         self.assertIn('@selector(layoutSubviews)', install)
         self.assertIn('@selector(prepareForReuse)', install)
-        self.assertIn('@selector(tableView:heightForRowAtIndexPath:)', install)
+        # Row-height spacing recursed on iOS 15; it must stay out of the installer.
+        self.assertNotIn('tableView:heightForRowAtIndexPath:', install)
 
     def test_supported_page_scope_is_fail_closed(self):
         for name in ['NewMainFrameViewController', 'ContactsViewController',
@@ -65,12 +66,8 @@ class CornersContract(unittest.TestCase):
         target = body('WCKCornerTargetFrame')
         self.assertIn('out.origin.x += margin', target)
         self.assertIn('out.size.width -= 2.0 * margin', target)
-        self.assertIn('out.origin.y += top', target)
-        self.assertIn('out.size.height -= top + bottom', target)
-        # Spacing is carried by the host row height, not by a floating card.
-        height = body('WCKCornerHeight')
-        self.assertIn('tableView:heightForRowAtIndexPath:', body('WCKInstallCorners'))
-        self.assertIn('height + extra', height)
+        # Vertical geometry stays untouched until spacing has a safe carrier.
+        self.assertNotIn('out.origin.y +=', target)
         for marker in ['geometry.frame', 'geometry.first-style', 'geometry.stable']:
             self.assertIn(marker, model)
 

@@ -326,7 +326,7 @@ static void geometry(void) {
     CGRect host=CGRectMake(0,100,420,60);
 
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.frame");
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.frame");
     layout(first);
     expectStyle(first,12,top,YES,"geometry.first-style");
     CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
@@ -338,12 +338,12 @@ static void geometry(void) {
     expectStyle(middle,12,0,YES,"geometry.middle-style");
 
     WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
-    setFrameExpect(last,host,insetFrame(host,24,0,4),"geometry.last-frame");
+    setFrameExpect(last,host,insetFrame(host,24,0,0),"geometry.last-frame");
     layout(last);
     expectStyle(last,12,bottom,YES,"geometry.last-style");
 
     WCKCornerScene *single=sceneWithRows(ContactsViewController.class,0,0,1);
-    setFrameExpect(single,host,insetFrame(host,24,4,4),"geometry.single-frame");
+    setFrameExpect(single,host,insetFrame(host,24,0,0),"geometry.single-frame");
     layout(single);
     expectStyle(single,12,allCorners,YES,"geometry.single-style");
 
@@ -353,10 +353,10 @@ static void geometry(void) {
     layout(first);
     expectStyle(first,12,top,YES,"geometry.spacing-zero-style");
     setting(@"globalCornerSpacing",@8);
-    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.spacing-back-frame");
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-back-frame");
 
     // The host may hand the same frame again; insets must not accumulate.
-    for (unsigned i=0;i<20;++i) setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.stable");
+    for (unsigned i=0;i<20;++i) setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.stable");
     layout(first);
 
     // Narrow rows clamp the margin instead of producing a negative width.
@@ -399,7 +399,7 @@ static void restore(void) {
     setting(@"globalCornerSpacing",@8);
     CGRect host=CGRectMake(0,100,420,60);
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    setFrameExpect(s,host,insetFrame(host,24,4,0),"restore.inset");
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"restore.inset");
     layout(s);
     expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"restore.applied");
 
@@ -409,13 +409,13 @@ static void restore(void) {
     hostStyle(s,"restore.host-values");
 
     setting(@"corners",@YES);
-    setFrameExpect(s,host,insetFrame(host,24,4,0),"reuse.inset-before");
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"reuse.inset-before");
     layout(s);
     [s.cell prepareForReuse];
     CHECK_ID("reuse.reuse-called",s.cell.fixtureReuseCalls==1);
     hostStyle(s,"reuse.host-style");
     // A dequeued cell starts from the host state until the table re-frames it.
-    setFrameExpect(s,host,insetFrame(host,24,4,0),"reuse.inset-after");
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"reuse.inset-after");
     layout(s);
     expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"reuse.reapplied");
 }
@@ -432,7 +432,7 @@ static void refresh(void) {
     setting(@"globalCornerSpacing",@8);
     CGRect host=CGRectMake(0,100,420,60);
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    setFrameExpect(s,host,insetFrame(host,24,4,0),"refresh.initial-frame");
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"refresh.initial-frame");
     layout(s);
     expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"refresh.initial");
     NSUInteger needs=s.cell.fixtureNeedsLayoutCalls;

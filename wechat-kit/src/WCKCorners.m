@@ -42,15 +42,8 @@ static BOOL sCornerRefreshQueued;
 
 typedef void (*WCKCornerFrameIMP)(id, SEL, CGRect);
 typedef void (*WCKCornerVoidIMP)(id, SEL);
-typedef CGFloat (*WCKCornerHeightIMP)(id, SEL, UITableView *, NSIndexPath *);
 static WCKCornerFrameIMP sMMFrame, sMainFrame;
 static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse;
-static IMP sCornerHeightOriginals[5];
-static Class sCornerHeightClasses[5];
-static const char *kCornerHeightNames[5] = {
-    "NewMainFrameViewController", "ContactsViewController", "FindFriendEntryViewController",
-    "MoreViewController", "ContactInfoViewController"
-};
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
 static BOOL WCKCornerObjectsEqual(id a, id b) { return a == b || [a isEqual:b]; }
@@ -489,19 +482,12 @@ static CGRect WCKCornerTargetFrame(UITableViewCell *cell, CGRect incoming,
     NSInteger rows = [table numberOfRowsInSection:path.section];
     if (rows <= 0 || path.row < 0 || path.row >= rows) return incoming;
     CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
-    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
     margin = MIN(margin, MAX(0.0, incoming.size.width / 2.0 - 1.0));
     BOOL first = path.row == 0, last = path.row == rows - 1;
-    CGFloat top = first ? spacing / 2.0 : 0.0;
-    CGFloat bottom = last ? spacing / 2.0 : 0.0;
     CGRect out = incoming;
     if (margin > 0 && out.size.width > 2.0 * margin) {
         out.origin.x += margin;
         out.size.width -= 2.0 * margin;
-    }
-    if (out.size.height > top + bottom + 1.0) {
-        out.origin.y += top;
-        out.size.height -= top + bottom;
     }
     if (firstOut) *firstOut = first;
     if (lastOut) *lastOut = last;
@@ -612,28 +598,9 @@ static void WCKMainCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMainReuse); 
 static void WCKMMCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMMFrame); }
 static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMainFrame); }
 
-// Spacing has to live in the row height, otherwise shrinking the frame leaves a
-// hole under the card. The first and last rows of a section own that space.
-static CGFloat WCKCornerHeight(id self, SEL cmd, UITableView *table, NSIndexPath *path) {
-    IMP original = NULL;
-    for (NSUInteger i = 0; i < 5; ++i) {
-        Class cls = sCornerHeightClasses[i];
-        if (cls && [self isKindOfClass:cls]) { original = sCornerHeightOriginals[i]; break; }
-    }
-    if (!original) return -1.0; // UITableViewAutomaticDimension
-    CGFloat height = ((WCKCornerHeightIMP)original)(self, cmd, table, path);
-    if (!WCKEnabled(@"corners") || height <= 0 || !path) return height;
-    NSDictionary *snapshot = WCKSettings.shared.snapshot;
-    NSString *pageKey = WCKCornerPageKey((UIViewController *)self);
-    if (!pageKey || ![snapshot[pageKey] boolValue]) return height;
-    NSInteger rows = [table numberOfRowsInSection:path.section];
-    if (rows <= 0) return height;
-    CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
-    CGFloat extra = 0;
-    if (path.row == 0) extra += spacing / 2.0;
-    if (path.row == rows - 1) extra += spacing / 2.0;
-    return height + extra;
-}
+// Row-height spacing is deliberately NOT hooked: asking the table for its row
+// count from inside heightForRow makes UIKit re-enter the same delegate and
+// recurse (observed as a main-thread stack overflow on iOS 15 / WeChat 8.0.79).
 
 
 void WCKRefreshCorners(void) {
@@ -684,17 +651,9 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMainReuse, "v", NULL, 0);
             mainReady = mf && ml && mr;
         }
-        // Spacing participates in the host's own row-height calculation.
-        const char *heightArgs[] = {"@", "@"};
-        for (NSUInteger i = 0; i < 5; ++i) {
-            Class page = NSClassFromString([NSString stringWithUTF8String:kCornerHeightNames[i]]);
-            sCornerHeightClasses[i] = page;
-            if (!page) continue;
-            SEL selector = @selector(tableView:heightForRowAtIndexPath:);
-            if (!class_getInstanceMethod(page, selector)) continue;
-            WCKInstallHook(page, selector, (IMP)WCKCornerHeight, &sCornerHeightOriginals[i],
-                           @encode(CGFloat), heightArgs, 2);
-        }
+        // No row-height hook here: it recursed through numberOfRowsInSection:
+        // on iOS 15 and crashed the main thread. Spacing stays a visual-only gap
+        // until a non-reentrant way to grow row height exists.
         BOOL viewMoved = WCKInstallHook(UIView.class, @selector(didMoveToWindow),
             (IMP)WCKCornerViewDidMove, (IMP *)&sViewDidMoveToWindow, "v", NULL, 0);
         BOOL viewColour = WCKInstallHook(UIView.class, @selector(setBackgroundColor:),
