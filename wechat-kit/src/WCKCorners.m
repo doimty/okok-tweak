@@ -438,22 +438,6 @@ static UIColor *WCKCornerTransparent(void) {
     dispatch_once(&once, ^{ colour = UIColor.clearColor; });
     return colour;
 }
-static BOOL WCKCornerContext(UITableViewCell *cell, NSDictionary *snapshot,
-                             UITableView **tableOut, NSIndexPath **pathOut, NSInteger *rowsOut) {
-    if (!cell.window || cell.hidden || cell.alpha < 0.01) return NO;
-    UITableView *table = WCKCornerTable(cell);
-    NSString *pageKey = WCKCornerPageKeyForTable(WCKCornerOwner(table), table);
-    if (!table || !pageKey || ![snapshot[pageKey] boolValue]) return NO;
-    NSIndexPath *path = [table indexPathForCell:cell];
-    if (!path || path.section < 0 || path.section >= [table numberOfSections]) return NO;
-    NSInteger rows = [table numberOfRowsInSection:path.section];
-    if (path.row < 0 || path.row >= rows) return NO;
-    if (tableOut) *tableOut = table;
-    if (pathOut) *pathOut = path;
-    if (rowsOut) *rowsOut = rows;
-    return YES;
-}
-
 static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) {
     if (!state) return;
     for (WCKCornerLayerState *saved in state.layers) {
@@ -563,18 +547,18 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
             if (!WCKEnabled(@"corners")) { WCKCornerRestoreStyle(cell, state); return; }
             NSDictionary *snapshot = WCKSettings.shared.snapshot;
-            UITableView *table = nil; NSIndexPath *path = nil;
-            if (!WCKCornerContext(cell, snapshot, &table, &path, NULL) ||
-                !WCKCornerFiniteRect(cell.bounds)) {
-                UITableView *probe = WCKCornerTable(cell);
-                NSString *why = @"skip:context";
-                if (probe) {
-                    NSString *key = WCKCornerPageKeyForTable(WCKCornerOwner(probe), probe);
-                    why = key ? [NSString stringWithFormat:@"gate=%@(%d)", key,
-                                 [snapshot[key] boolValue] ? 1 : 0] : @"gate=none";
-                    if (WCKCornerFiniteRect(cell.bounds) == NO) why = @"skip:zero-bounds";
-                }
-                WCKCornerNote(NSStringFromClass(cell.class), probe, why, YES);
+            // Home list cells lay out before the table registers them, so a nil
+            // index path must not block the card: fall back to a middle row and
+            // refine the group corners on the next pass that has one.
+            UITableView *table = WCKCornerTable(cell);
+            NSIndexPath *path = table ? [table indexPathForCell:cell] : nil;
+            NSString *pageKey = WCKCornerPageKeyForTable(WCKCornerOwner(table), table);
+            BOOL gateOn = pageKey && [snapshot[pageKey] boolValue];
+            if (!table || !gateOn || !WCKCornerFiniteRect(cell.bounds)) {
+                NSString *why = !table ? @"skip:no-table" :
+                    (!gateOn ? [NSString stringWithFormat:@"gate=%@(0)", pageKey ?: @"none"]
+                             : @"skip:zero-bounds");
+                WCKCornerNote(NSStringFromClass(cell.class), table, why, YES);
                 // Transient during scrolling/reuse: keep the style we already
                 // applied instead of stripping it and losing the card.
                 return;
@@ -582,9 +566,9 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             if (!sCornerCells) sCornerCells = [NSHashTable weakObjectsHashTable];
             [sCornerCells addObject:cell];
             state = WCKCornerGetState(cell, YES);
-            NSInteger rows = [table numberOfRowsInSection:path.section];
-            BOOL first = path.row == 0;
-            BOOL last = rows > 0 && path.row == rows - 1;
+            NSInteger rows = path ? [table numberOfRowsInSection:path.section] : 0;
+            BOOL first = path ? path.row == 0 : NO;
+            BOOL last = path && rows > 0 && path.row == rows - 1;
             CGRect bounds = cell.bounds;
             if (!sCornerConfig.valid) WCKCornerReloadConfig();
             CGFloat radius = sCornerConfig.radius;
