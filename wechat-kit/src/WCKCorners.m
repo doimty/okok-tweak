@@ -528,17 +528,35 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
 }
 // Visible diagnostic: the settings page prints this in the module status row,
 // so a device screenshot tells us why rows were skipped instead of guessing.
-static NSString *sCornerDiag;
-static NSTimeInterval sCornerDiagAt;
+// Aggregated per table class: the settings table must not hide the home list.
+static NSMutableDictionary<NSString *, NSMutableDictionary *> *sCornerDiagTables;
 static void WCKCornerNote(NSString *cellClass, UITableView *table, NSString *why, BOOL force) {
+    static NSTimeInterval lastAt;
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-    if (!force && now - sCornerDiagAt < 1.0 && sCornerDiag.length) return;
-    sCornerDiagAt = now;
+    if (!force && now - lastAt < 1.0) return;
+    lastAt = now;
+    if (!sCornerDiagTables) sCornerDiagTables = [NSMutableDictionary dictionary];
     NSString *tableName = table ? NSStringFromClass(table.class) : @"nil";
     NSString *ownerName = table ? NSStringFromClass(WCKCornerOwner(table).class) : @"nil";
-    sCornerDiag = [NSString stringWithFormat:@"%@ | t=%@ o=%@ | %@",
-        cellClass ?: @"?", tableName, ownerName, why ?: @"?"];
-    WCKSetModuleStatus(@"corners.debug", sCornerDiag);
+    NSInteger count = [sCornerDiagTables[tableName][@"n"] integerValue] + 1;
+    sCornerDiagTables[tableName] = [@{@"n": @(count), @"o": ownerName ?: @"nil",
+        @"w": why ?: @"?", @"c": cellClass ?: @"?"} mutableCopy];
+    if (sCornerDiagTables.count > 8) {
+        NSString *oldest = sCornerDiagTables.allKeys.firstObject;
+        if (oldest) [sCornerDiagTables removeObjectForKey:oldest];
+    }
+    NSArray<NSString *> *keys = [sCornerDiagTables.allKeys sortedArrayUsingComparator:^NSComparisonResult(
+        NSString *a, NSString *b) {
+        return [sCornerDiagTables[b][@"n"] compare:sCornerDiagTables[a][@"n"]];
+    }];
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    for (NSString *key in keys) {
+        if (parts.count == 3) break;
+        NSDictionary *info = sCornerDiagTables[key];
+        [parts addObject:[NSString stringWithFormat:@"%@×%@ o=%@ %@",
+            key, info[@"n"], info[@"o"], info[@"w"]]];
+    }
+    WCKSetModuleStatus(@"corners.debug", [parts componentsJoinedByString:@" ; "]);
 }
 static void WCKCornerApplyStyle(UITableViewCell *cell) {
     @try {
@@ -548,7 +566,15 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             UITableView *table = nil; NSIndexPath *path = nil;
             if (!WCKCornerContext(cell, snapshot, &table, &path, NULL) ||
                 !WCKCornerFiniteRect(cell.bounds)) {
-                WCKCornerNote(NSStringFromClass(cell.class), WCKCornerTable(cell), @"skip:context", YES);
+                UITableView *probe = WCKCornerTable(cell);
+                NSString *why = @"skip:context";
+                if (probe) {
+                    NSString *key = WCKCornerPageKeyForTable(WCKCornerOwner(probe), probe);
+                    why = key ? [NSString stringWithFormat:@"gate=%@(%d)", key,
+                                 [snapshot[key] boolValue] ? 1 : 0] : @"gate=none";
+                    if (WCKCornerFiniteRect(cell.bounds) == NO) why = @"skip:zero-bounds";
+                }
+                WCKCornerNote(NSStringFromClass(cell.class), probe, why, YES);
                 // Transient during scrolling/reuse: keep the style we already
                 // applied instead of stripping it and losing the card.
                 return;
@@ -618,6 +644,7 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
                     state.ownsSelected = YES;
                 }
             }
+            WCKCornerNote(NSStringFromClass(cell.class), table, @"styled", NO);
     } @catch (__unused NSException *exception) {
         WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
     }
