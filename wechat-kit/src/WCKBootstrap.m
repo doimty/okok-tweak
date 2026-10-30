@@ -14,12 +14,16 @@ __attribute__((constructor)) static void WCKStart(void) {
         // Bounded late-image retries, not a perpetual polling loop.
         for (NSNumber *delay in @[@0.25, @1.0, @3.0])
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)),
-                dispatch_get_main_queue(), ^{ WCKInstallEntryPoints(); });
+                dispatch_get_main_queue(), ^{
+                    WCKInstallEntryPoints();
+                    WCKInstallCornersLate();
+                });
         for (NSNotificationName name in @[UIApplicationDidFinishLaunchingNotification,
                                           UIApplicationDidBecomeActiveNotification])
             [NSNotificationCenter.defaultCenter addObserverForName:name object:nil
                 queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
                     WCKInstallEntryPoints();
+                    WCKInstallCornersLate();
                 }];
     });
 }

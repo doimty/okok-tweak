@@ -50,8 +50,6 @@ typedef void (*WCKCornerVoidIMP)(id, SEL);
 static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame;
 static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse, sBaseLayout, sBaseReuse;
 static WCKCornerVoidIMP sContentLayout;
-static BOOL WCKCornerIsKnownCellClass(Class cls);
-static void WCKCornerHookLateClass(Class cls);
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
 static BOOL WCKCornerObjectsEqual(id a, id b) { return a == b || [a isEqual:b]; }
@@ -596,7 +594,6 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
     ++sCornerLayoutDepth;
     @try {
         original(cell, cmd);
-        if (!WCKCornerIsKnownCellClass([cell class])) WCKCornerHookLateClass([cell class]);
         WCKCornerApplyStyle(cell);
     } @finally { --sCornerLayoutDepth; sCornerLayoutCell = previous; }
 }
@@ -628,68 +625,14 @@ static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, 
 static void WCKBaseCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sBaseLayout); }
 static void WCKBaseCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sBaseReuse); }
 static void WCKBaseCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sBaseFrame); }
-static BOOL WCKCornerIsKnownCellClass(Class cls) {
-    static Class known[3];
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        known[0] = UITableViewCell.class;
-        known[1] = NSClassFromString(@"MMTableViewCell");
-        known[2] = NSClassFromString(@"NewMainFrameCell");
-    });
-    for (NSUInteger i = 0; i < 3; ++i) if (known[i] && cls == known[i]) return YES;
-    return NO;
-}
 static void WCKCornerContentLayout(UIView *view, SEL cmd) {
     sContentLayout(view, cmd);
     if (!NSThread.isMainThread) return;
     UIView *host = view.superview;
     if (![host isKindOfClass:UITableViewCell.class]) return;
-    if (!WCKCornerIsKnownCellClass([host class])) WCKCornerHookLateClass([host class]);
     // WeChat re-writes the cell background while its content lays out; styling
     // here keeps the card applied even when the cell's own layout is bypassed.
     WCKCornerApplyStyle((UITableViewCell *)host);
-}
-// Late classes: a cell class that did not exist when the dylib loaded (the home
-// list builds its cells late) is hooked the first time one of its instances
-// reaches these trampolines.
-static NSMutableDictionary<NSString *, NSValue *> *sLateOriginals;
-static NSMutableSet<NSString *> *sLateClasses;
-static IMP WCKLateOriginal(Class cls, SEL sel) {
-    NSString *key = [NSString stringWithFormat:@"%p/%s", cls, sel_getName(sel)];
-    return (IMP)[sLateOriginals[key] pointerValue];
-}
-static void WCKLateLayout(id c, SEL s) {
-    WCKCornerLayout(c, s, (WCKCornerVoidIMP)WCKLateOriginal([c class], s));
-}
-static void WCKLateReuse(id c, SEL s) {
-    WCKCornerReuse(c, s, (WCKCornerVoidIMP)WCKLateOriginal([c class], s));
-}
-static void WCKLateFrame(id c, SEL s, CGRect f) {
-    WCKCornerSetFrame(c, s, f, (WCKCornerFrameIMP)WCKLateOriginal([c class], s));
-}
-static void WCKCornerHookLateClass(Class cls) {
-    if (!cls) return;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        sLateOriginals = [NSMutableDictionary dictionary];
-        sLateClasses = [NSMutableSet set];
-    });
-    NSString *name = NSStringFromClass(cls);
-    if (!name.length) return;
-    @synchronized (sLateClasses) {
-        if ([sLateClasses containsObject:name]) return;
-        [sLateClasses addObject:name];
-    }
-    const char *frameArgs[] = {@encode(CGRect)};
-    IMP original = NULL;
-    if (WCKInstallHook(cls, @selector(setFrame:), (IMP)WCKLateFrame, &original, "v", frameArgs, 1) && original)
-        sLateOriginals[[NSString stringWithFormat:@"%p/setFrame:", cls]] = [NSValue valueWithPointer:original];
-    original = NULL;
-    if (WCKInstallHook(cls, @selector(layoutSubviews), (IMP)WCKLateLayout, &original, "v", NULL, 0) && original)
-        sLateOriginals[[NSString stringWithFormat:@"%p/layoutSubviews", cls]] = [NSValue valueWithPointer:original];
-    original = NULL;
-    if (WCKInstallHook(cls, @selector(prepareForReuse), (IMP)WCKLateReuse, &original, "v", NULL, 0) && original)
-        sLateOriginals[[NSString stringWithFormat:@"%p/prepareForReuse", cls]] = [NSValue valueWithPointer:original];
 }
 
 // Row-height spacing is deliberately NOT hooked: asking the table for its row
@@ -808,4 +751,26 @@ void WCKInstallCorners(void) {
             }];
         WCKCornerReloadConfig();
     });
+}
+void WCKInstallCornersLate(void) {
+    // The home list may load its cell class after the dylib; retry once, with
+    // statically stored originals (never a per-instance lookup that can miss).
+    static BOOL done = NO;
+    if (done) return;
+    Class main = NSClassFromString(@"NewMainFrameCell");
+    if (!main) return;
+    done = YES;
+    const char *frameArgs[] = {@encode(CGRect)};
+    IMP original = NULL;
+    if (!sMainFrame && WCKInstallHook(main, @selector(setFrame:), (IMP)WCKMainCornerFrame,
+                                      &original, "v", frameArgs, 1) && original)
+        sMainFrame = (WCKCornerFrameIMP)original;
+    original = NULL;
+    if (!sMainLayout && WCKInstallHook(main, @selector(layoutSubviews), (IMP)WCKMainCornerLayout,
+                                       &original, "v", NULL, 0) && original)
+        sMainLayout = (WCKCornerVoidIMP)original;
+    original = NULL;
+    if (!sMainReuse && WCKInstallHook(main, @selector(prepareForReuse), (IMP)WCKMainCornerReuse,
+                                      &original, "v", NULL, 0) && original)
+        sMainReuse = (WCKCornerVoidIMP)original;
 }
