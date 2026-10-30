@@ -51,8 +51,9 @@ static BOOL sCornerRefreshQueued;
 
 typedef void (*WCKCornerFrameIMP)(id, SEL, CGRect);
 typedef void (*WCKCornerVoidIMP)(id, SEL);
-static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame;
+static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame, sMultiFrame;
 static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse, sBaseLayout, sBaseReuse;
+static WCKCornerVoidIMP sMultiLayout, sMultiReuse;
 static WCKCornerVoidIMP sContentLayout;
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
@@ -751,6 +752,11 @@ static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, 
 static void WCKBaseCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sBaseLayout); }
 static void WCKBaseCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sBaseReuse); }
 static void WCKBaseCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sBaseFrame); }
+// Home cells inherit through MMMultiMenuTableViewCell; hooking the middle class
+// keeps layout/restore reachable even when a subclass forwards only to it.
+static void WCKMultiCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sMultiLayout); }
+static void WCKMultiCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMultiReuse); }
+static void WCKMultiCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMultiFrame); }
 static void WCKCornerContentLayout(UIView *view, SEL cmd) {
     sContentLayout(view, cmd);
     if (!NSThread.isMainThread) return;
@@ -814,6 +820,17 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMainReuse, "v", NULL, 0);
             mainReady = mf && ml && mr;
         }
+        BOOL multiReady = NO;
+        Class multi = NSClassFromString(@MMMultiMenuTableViewCell);
+        if (multi) {
+            BOOL f = WCKInstallHook(multi, @selector(setFrame:), (IMP)WCKMultiCornerFrame,
+                                    (IMP *)&sMultiFrame, v, frameArgs, 1);
+            BOOL l = WCKInstallHook(multi, @selector(layoutSubviews), (IMP)WCKMultiCornerLayout,
+                                    (IMP *)&sMultiLayout, v, NULL, 0);
+            BOOL r = WCKInstallHook(multi, @selector(prepareForReuse), (IMP)WCKMultiCornerReuse,
+                                    (IMP *)&sMultiReuse, v, NULL, 0);
+            multiReady = f && l && r;
+        }
         // Cover cells whose subclasses override the methods above without
         // calling super: the base class and the content view still run.
         BOOL baseReady = NO;
@@ -867,7 +884,7 @@ void WCKInstallCorners(void) {
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
         WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
-        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady
+        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady && (multiReady || !NSClassFromString(@"MMMultiMenuTableViewCell"))
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
