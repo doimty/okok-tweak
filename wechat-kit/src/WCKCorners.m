@@ -28,6 +28,9 @@ static BOOL sCornerRefreshQueued;
 @interface WCKCornerState : NSObject
 @property(nonatomic) BOOL ownsFill, ownsViewFill, ownsSelected, ownsContentFill;
 @property(nonatomic) BOOL ownsMask;
+@property(nonatomic) BOOL ownsHostRadius;
+@property(nonatomic) CGFloat hostCellRadius, hostBgRadius, hostContentRadius;
+@property(nonatomic, weak) UIView *hostBgView;
 @property(nonatomic, strong) CAShapeLayer *maskLayer;
 @property(nonatomic, weak) CALayer *hostMask;
 @property(nonatomic, strong) UIColor *hostContentFill, *appliedContentFill;
@@ -283,6 +286,14 @@ static void WCKCornerApplyToView(UIView *view) {
         for (UIView *child in view.subviews) {
             if ([child isKindOfClass:UITableViewCell.class]) continue;
             if (child.layer.cornerRadius > 0.01) continue; // host-owned
+            if ([child isKindOfClass:UITextField.class]) {
+                // A search field paints its own background image; clipping the
+                // field is what actually makes the box round.
+                child.layer.cornerRadius = radius;
+                child.layer.cornerCurve = kCACornerCurveContinuous;
+                child.layer.masksToBounds = YES;
+                continue;
+            }
             UIColor *colour = child.backgroundColor;
             if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
                 child.layer.cornerRadius = radius;
@@ -494,6 +505,13 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
         state.fixedSelectedView.frame = state.hostSelectedFrame;
     if (state.ownsMask && cell.layer.mask == state.maskLayer) cell.layer.mask = state.hostMask;
     state.ownsMask = NO; state.maskLayer = nil; state.hostMask = nil;
+    if (state.ownsHostRadius) {
+        cell.layer.cornerRadius = state.hostCellRadius;
+        if (cell.backgroundView == state.hostBgView)
+            cell.backgroundView.layer.cornerRadius = state.hostBgRadius;
+        cell.contentView.layer.cornerRadius = state.hostContentRadius;
+        state.ownsHostRadius = NO; state.hostBgView = nil;
+    }
     if (state.ownsContentFill && WCKCornerObjectsEqual(cell.contentView.backgroundColor, state.appliedContentFill))
         cell.contentView.backgroundColor = state.hostContentFill;
     state.ownsFill = NO; state.hostFill = nil; state.appliedFill = nil;
@@ -630,10 +648,23 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             // A nil path would mask the whole row away; middle rows keep a plain
             // rectangular path so the card stays continuous.
             CGFloat pathRadius = (corners == 0) ? 0 : radius;
-            UIBezierPath *cornerPath = [UIBezierPath bezierPathWithRoundedRect:bounds
+            CGRect pathRect = (corners == 0) ? CGRectInset(bounds, -0.5, 0) : bounds;
+            UIBezierPath *cornerPath = [UIBezierPath bezierPathWithRoundedRect:pathRect
                 byRoundingCorners:corners cornerRadii:CGSizeMake(pathRadius, pathRadius)];
             maskLayer.path = cornerPath.CGPath;
             if (cell.layer.mask != maskLayer) cell.layer.mask = maskLayer;
+            // WeChat rounds grouped cells itself; two radii on one corner read
+            // as a notch. Clear the host value while our mask owns the shape.
+            if (!state.ownsHostRadius) {
+                state.hostCellRadius = cell.layer.cornerRadius;
+                state.hostBgRadius = cell.backgroundView.layer.cornerRadius;
+                state.hostContentRadius = cell.contentView.layer.cornerRadius;
+                state.hostBgView = cell.backgroundView;
+                state.ownsHostRadius = YES;
+            }
+            cell.layer.cornerRadius = 0;
+            cell.backgroundView.layer.cornerRadius = 0;
+            cell.contentView.layer.cornerRadius = 0;
             state.appliedBounds = bounds; state.appliedRadius = radius;
             state.appliedCorners = corners;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);

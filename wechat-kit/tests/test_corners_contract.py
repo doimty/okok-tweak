@@ -76,7 +76,7 @@ class CornersContract(unittest.TestCase):
         apply = body('WCKCornerApplyStyle')
         self.assertIn('[CAShapeLayer layer]', apply)
         self.assertIn('cell.layer.mask = maskLayer', apply)
-        self.assertIn('bezierPathWithRoundedRect:bounds', apply)
+        self.assertIn('bezierPathWithRoundedRect:pathRect', apply)
         self.assertIn('byRoundingCorners:corners', apply)
         self.assertIn('cell.contentView.backgroundColor = WCKCornerTransparent()', apply)
         self.assertIn('WCKCornerApplyStyle(cell);', body('WCKCornerLayout'))
