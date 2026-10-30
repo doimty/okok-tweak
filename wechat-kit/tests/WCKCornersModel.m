@@ -284,42 +284,34 @@ static WCKCornerScene *sceneWithRows(Class controllerClass, NSInteger row, NSInt
     return s;
 }
 static void layout(WCKCornerScene *s) {
-    NSUInteger frames=s.cell.fixtureFrameCalls;
-    NSUInteger content=s.cell.contentView.fixtureFrameCalls;
     NSUInteger calls=s.cell.fixtureLayoutCalls;
     [s.cell layoutSubviews];
     CHECK_ID("layout.original-once",s.cell.fixtureLayoutCalls==calls+1);
-    // The host owns both the cell frame and the content layout.
-    CHECK_ID("layout.frame-untouched",s.cell.fixtureFrameCalls==frames);
-    CHECK_ID("layout.content-host-only",s.cell.contentView.fixtureFrameCalls==content+1);
     CHECK_ID("layout.content-bounds",sameRect(s.cell.contentView.frame,s.cell.bounds));
-    CHECK_ID("layout.content-untouched",s.cell.contentView.layer.cornerRadius==0 &&
-        [s.cell.contentView.layer.cornerCurve isEqual:@"host"]);
-    CHECK_ID("layout.cell-layer-untouched",s.cell.layer.cornerRadius==0 ||
-        near(s.cell.layer.cornerRadius,3));
 }
-static CGRect cardRect(WCKCornerScene *s, CGFloat margin, CGFloat spacing, BOOL first, BOOL last) {
-    CGRect b=s.cell.bounds;
-    CGFloat top=first ? spacing/2.0 : 0.0, bottom=last ? spacing/2.0 : 0.0;
-    return CGRectMake(margin,top,b.size.width-2*margin,b.size.height-top-bottom);
+static void setFrameExpect(WCKCornerScene *s, CGRect incoming, CGRect expected, const char *tag) {
+    s.cell.frame=incoming;
+    CHECK_ID(tag,sameRect(s.cell.frame,expected));
 }
-static void expectCard(WCKCornerScene *s, CGRect rect, CACornerMask mask, CGFloat radius,
-                       const char *tag) {
-    UIView *back=s.cell.backgroundView;
-    CHECK_ID(tag,back!=nil && sameRect(back.frame,rect));
-    CHECK_ID(tag,near(back.layer.cornerRadius,radius) && back.layer.maskedCorners==mask &&
-        [back.layer.cornerCurve isEqual:kCACornerCurveContinuous]);
-    CHECK_ID(tag,sameColor(s.cell.backgroundColor.CGColor,[UIColor clearColor].CGColor));
+static void expectStyle(WCKCornerScene *s, CGFloat radius, CACornerMask mask, BOOL clips,
+                        const char *tag) {
+    CALayer *layer=s.cell.layer;
+    CHECK_ID(tag,near(layer.cornerRadius,radius) && layer.maskedCorners==mask &&
+        layer.masksToBounds==clips);
+    if (clips) CHECK_ID(tag,[layer.cornerCurve isEqual:kCACornerCurveContinuous]);
 }
 static void hostStyle(WCKCornerScene *s, const char *tag) {
-    UIView *back=s.cell.backgroundView;
+    CALayer *layer=s.cell.layer;
+    CHECK_ID(tag,near(layer.cornerRadius,3) && layer.maskedCorners==allCorners &&
+        [layer.cornerCurve isEqual:@"host"] && !layer.masksToBounds);
+    CHECK_ID(tag,near(layer.borderWidth,1) && sameColor(layer.borderColor,s.hostBorder.CGColor));
     CHECK_ID(tag,s.cell.backgroundColor==s.hostColor);
-    if (back) {
-        CHECK_ID(tag,near(back.layer.cornerRadius,3) &&
-            [back.layer.cornerCurve isEqual:@"host"] && back.layer.maskedCorners==allCorners);
-        CHECK_ID(tag,near(back.layer.borderWidth,1) &&
-            sameColor(back.layer.borderColor,s.hostBorder.CGColor));
-    }
+}
+static CGRect insetFrame(CGRect f, CGFloat margin, CGFloat top, CGFloat bottom) {
+    CGRect out=f;
+    out.origin.x+=margin; out.size.width-=2*margin;
+    out.origin.y+=top; out.size.height-=top+bottom;
+    return out;
 }
 
 static void geometry(void) {
@@ -329,76 +321,65 @@ static void geometry(void) {
     setting(@"globalCornerSpacing",@8);
     setting(@"globalCornerRadius",@12);
 
-    WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    layout(first);
-    UIView *firstCard=first.cell.backgroundView;
-    CHECK_ID("geometry.frame",firstCard!=nil &&
-        sameRect(firstCard.frame,CGRectMake(24,4,372,56)));
-    expectCard(first,cardRect(first,24,8,YES,NO),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"geometry.first");
+    CACornerMask top=kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner;
+    CACornerMask bottom=kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner;
+    CGRect host=CGRectMake(0,100,420,60);
 
-    // Grouped card: middle rows are square so the section reads as one card.
+    WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.first-frame");
+    layout(first);
+    expectStyle(first,12,top,YES,"geometry.first-style");
+    CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
+        [UIColor clearColor].CGColor));
+
     WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
+    setFrameExpect(middle,host,insetFrame(host,24,0,0),"geometry.middle-frame");
     layout(middle);
-    expectCard(middle,cardRect(middle,24,8,NO,NO),0,12,"geometry.middle");
+    expectStyle(middle,12,0,YES,"geometry.middle-style");
 
     WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
+    setFrameExpect(last,host,insetFrame(host,24,0,4),"geometry.last-frame");
     layout(last);
-    expectCard(last,cardRect(last,24,8,NO,YES),
-        kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner,12,"geometry.last");
+    expectStyle(last,12,bottom,YES,"geometry.last-style");
 
     WCKCornerScene *single=sceneWithRows(ContactsViewController.class,0,0,1);
+    setFrameExpect(single,host,insetFrame(host,24,4,4),"geometry.single-frame");
     layout(single);
-    expectCard(single,cardRect(single,24,8,YES,YES),allCorners,12,"geometry.single");
+    expectStyle(single,12,allCorners,YES,"geometry.single-style");
 
-    // Group spacing comes from the section's first/last rows only.
+    // Zero spacing must not leave a hole: the row keeps its full height.
     setting(@"globalCornerSpacing",@0);
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-zero-frame");
     layout(first);
-    expectCard(first,CGRectMake(24,0,372,60),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"geometry.spacing-zero");
+    expectStyle(first,12,top,YES,"geometry.spacing-zero-style");
     setting(@"globalCornerSpacing",@8);
+    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.spacing-back-frame");
+
+    // The host may hand the same frame again; insets must not accumulate.
+    for (unsigned i=0;i<20;++i) setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.stable");
     layout(first);
-    expectCard(first,CGRectMake(24,4,372,56),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"geometry.spacing-back");
 
-    // Repeated layouts must stay idempotent: no growing insets, no double frames.
-    for (unsigned i=0;i<20;++i) { layout(first); }
-    expectCard(first,CGRectMake(24,4,372,56),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"geometry.stable");
-
-    // Narrow hosts clamp the margin instead of producing a negative card.
+    // Narrow rows clamp the margin instead of producing a negative width.
     WCKCornerScene *narrow=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     narrow.cell.frame=CGRectMake(40,100,20,60);
+    CHECK_ID("geometry.narrow-card",narrow.cell.frame.size.width>=1 && narrow.cell.frame.size.height>0);
     layout(narrow);
-    UIView *narrowCard=narrow.cell.backgroundView;
-    CHECK_ID("geometry.narrow-card",narrowCard.frame.size.width>=1 &&
-        narrowCard.frame.size.width<=20 && narrowCard.frame.size.height>0);
-    CHECK_ID("geometry.narrow-radius",narrowCard.layer.cornerRadius<=
-        MIN(narrowCard.frame.size.width,narrowCard.frame.size.height)/2.0+0.001);
+    CHECK_ID("geometry.narrow-radius",narrow.cell.layer.cornerRadius<=
+        MIN(narrow.cell.bounds.size.width,narrow.cell.bounds.size.height)/2.0+0.001);
 
-    // Disabling restores host styling and detaches any card we created.
+    // Disabling restores both the frame and the layer.
     setting(@"corners",@NO);
+    setFrameExpect(first,host,host,"geometry.disabled-frame");
     layout(first);
-    hostStyle(first,"geometry.disabled-host-restored");
+    hostStyle(first,"geometry.disabled-style");
 }
 
 static void isolation(void) {
     // Unknown controllers are outside every page gate.
     WCKCornerScene *unknown=sceneWithRows(WCKUnknownViewController.class,0,1,3);
+    setFrameExpect(unknown,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"isolation.page-off-frame");
     layout(unknown);
-    hostStyle(unknown,"isolation.page-off");
-    CHECK_ID("isolation.page-off-bg",sameColor(unknown.cell.backgroundColor.CGColor,
-        unknown.hostColor.CGColor));
-
-    // A host-authored background view is never replaced, only styled.
-    WCKCornerScene *hostOwned=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    UIView *hostBack=hostOwned.cell.backgroundView;
-    layout(hostOwned);
-    CHECK_ID("isolation.same-background-view",hostOwned.cell.backgroundView==hostBack);
-    setting(@"corners",@NO);
-    layout(hostOwned);
-    CHECK_ID("isolation.background-kept",hostOwned.cell.backgroundView==hostBack);
-    hostStyle(hostOwned,"isolation.background-restored");
+    hostStyle(unknown,"isolation.page-off-style");
 
     // Generic views outside the cell path keep their own layer untouched.
     setting(@"corners",@YES);
@@ -416,32 +397,27 @@ static void isolation(void) {
 
 static void restore(void) {
     setting(@"globalCornerSpacing",@8);
+    CGRect host=CGRectMake(0,100,420,60);
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    s.cell.backgroundView=nil; // no host background: the card view is ours
+    setFrameExpect(s,host,insetFrame(host,24,4,0),"restore.inset");
     layout(s);
-    CHECK_ID("restore.enabled-card",s.cell.backgroundView!=nil);
+    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"restore.applied");
+
     setting(@"corners",@NO);
+    setFrameExpect(s,host,host,"restore.frame");
     layout(s);
     hostStyle(s,"restore.host-values");
-    CHECK_ID("restore.detached",s.cell.backgroundView==nil);
 
-    // Reuse drops the created card so a dequeued cell starts from the host state.
     setting(@"corners",@YES);
+    setFrameExpect(s,host,insetFrame(host,24,4,0),"reuse.inset-before");
     layout(s);
-    CHECK_ID("reuse.card-before",s.cell.backgroundView!=nil);
     [s.cell prepareForReuse];
-    CHECK_ID("reuse.card-dropped",s.cell.backgroundView==nil);
-    CHECK_ID("reuse.fill-restored",s.cell.backgroundColor==s.hostColor);
     CHECK_ID("reuse.reuse-called",s.cell.fixtureReuseCalls==1);
+    hostStyle(s,"reuse.host-style");
+    // A dequeued cell starts from the host state until the table re-frames it.
+    setFrameExpect(s,host,insetFrame(host,24,4,0),"reuse.inset-after");
     layout(s);
-    CHECK_ID("reuse.card-recreated",s.cell.backgroundView!=nil);
-
-    // A host-owned background survives reuse.
-    WCKCornerScene *owned=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    UIView *hostBack=owned.cell.backgroundView;
-    layout(owned);
-    [owned.cell prepareForReuse];
-    CHECK_ID("reuse.host-background-kept",owned.cell.backgroundView==hostBack);
+    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"reuse.reapplied");
 }
 
 static void drainRefresh(void) {
@@ -454,18 +430,18 @@ static void drainRefresh(void) {
 }
 static void refresh(void) {
     setting(@"globalCornerSpacing",@8);
+    CGRect host=CGRectMake(0,100,420,60);
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    setFrameExpect(s,host,insetFrame(host,24,4,0),"refresh.initial-frame");
     layout(s);
-    expectCard(s,cardRect(s,24,8,YES,NO),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"refresh.initial");
+    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"refresh.initial");
     NSUInteger needs=s.cell.fixtureNeedsLayoutCalls;
     setting(@"globalCornerRadius",@18);
     WCKRefreshCorners();
     drainRefresh();
     CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1);
     layout(s);
-    expectCard(s,cardRect(s,24,8,YES,NO),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,18,"refresh.radius");
+    expectStyle(s,18,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"refresh.radius");
     setting(@"globalCornerRadius",@12);
     setting(@"corners",@NO);
     WCKRefreshCorners();
@@ -492,20 +468,25 @@ static void abi(void) {
     for (NSDictionary *entry in hookTargets) {
         NSString *c=entry[@"class"], *sel=entry[@"selector"];
         BOOL cellTarget=[@[@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
+        BOOL pageTarget=[@[@"NewMainFrameViewController",@"ContactsViewController",
+                           @"FindFriendEntryViewController",@"MoreViewController",
+                           @"ContactInfoViewController"] containsObject:c];
         BOOL verifiedTarget=[@[@"MMHeadImageView", @"TLProfileImageView", @"FakeHeadImageView",
                               @"MMMsgContentNavBar", @"MMNewMsgContentNavBar", @"MMTabBar"] containsObject:c];
         BOOL viewTarget=[c isEqual:@"UIView"];
         BOOL allowedSelector=viewTarget
             ? ([sel isEqual:@"didMoveToWindow"] || [sel isEqual:@"setBackgroundColor:"] ||
                [sel isEqual:@"layoutSubviews"])
-            : ([sel isEqual:@"layoutSubviews"] || [sel isEqual:@"prepareForReuse"]);
-        CHECK_ID("abi.allowed-target",(cellTarget || verifiedTarget || viewTarget) && allowedSelector);
-        CHECK_ID("abi.no-frame-hook",![sel isEqual:@"setFrame:"]);
+            : pageTarget ? [sel isEqual:@"tableView:heightForRowAtIndexPath:"]
+            : ([sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
+               [sel isEqual:@"prepareForReuse"]);
+        CHECK_ID("abi.allowed-target",(cellTarget || pageTarget || verifiedTarget || viewTarget) &&
+            allowedSelector);
         CHECK_ID("abi.selector-present",[entry[@"selectorPresent"] boolValue]);
     }
-    // frame geometry is host-owned now, so it must not be part of our ABI surface.
-    CHECK_ID("abi.frame",WCKMethodMatches(UITableViewCell.class,@selector(layoutSubviews),
-        @encode(void),NULL,0));
+    // The frame hook is the point of this design: the row must arrive pre-inset.
+    CHECK_ID("abi.frame",WCKMethodMatches(UITableViewCell.class,@selector(setFrame:),
+        @encode(void),(const char *[]){@encode(CGRect)},1));
 }
 
 int main(int argc, char **argv) {

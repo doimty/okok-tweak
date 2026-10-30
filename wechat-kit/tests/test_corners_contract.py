@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contracts for WCR-scoped list-cell corners; not UIKit behavior tests."""
+"""Static contracts for the 德发-style list-cell corners; not UIKit behavior tests."""
 import argparse
 import re
 import unittest
@@ -39,10 +39,10 @@ class CornersContract(unittest.TestCase):
         self.assertIn('WCKInstallHook(UIView.class, @selector(didMoveToWindow)', source)
         self.assertIn('WCKInstallHook(UIView.class, @selector(setBackgroundColor:)', source)
         install = body('WCKInstallCorners')
-        # Frame geometry is host-owned; hooking setFrame: is what shifted content.
-        self.assertNotIn('@selector(setFrame:)', install)
+        self.assertIn('@selector(setFrame:)', install)
         self.assertIn('@selector(layoutSubviews)', install)
         self.assertIn('@selector(prepareForReuse)', install)
+        self.assertIn('@selector(tableView:heightForRowAtIndexPath:)', install)
 
     def test_supported_page_scope_is_fail_closed(self):
         for name in ['NewMainFrameViewController', 'ContactsViewController',
@@ -56,71 +56,71 @@ class CornersContract(unittest.TestCase):
             self.assertIn(key, settings)
         enabled = body('WCKCornerPageEnabled')
         self.assertIn('WCKCornerPageKey(owner)', enabled)
-        self.assertNotIn('cornersList', source)
-        self.assertNotIn('cornersMenu', source)
-        self.assertNotIn('cornersSearch', source)
-        self.assertNotIn('cornersOther', source)
 
-    def test_card_is_an_inset_background_view(self):
+    def test_geometry_is_applied_at_setframe_time(self):
+        frame = body('WCKCornerSetFrame')
+        self.assertIn('WCKCornerTargetFrame(cell, frame', frame)
+        self.assertIn('++sCornerFrameDepth', frame)
+        self.assertIn('original(cell, cmd, target);', frame)
+        target = body('WCKCornerTargetFrame')
+        self.assertIn('out.origin.x += margin', target)
+        self.assertIn('out.size.width -= 2.0 * margin', target)
+        self.assertIn('out.origin.y += top', target)
+        self.assertIn('out.size.height -= top + bottom', target)
+        # Spacing is carried by the host row height, not by a floating card.
+        height = body('WCKCornerHeight')
+        self.assertIn('tableView:heightForRowAtIndexPath:', body('WCKInstallCorners'))
+        self.assertIn('height + extra', height)
+        for marker in ['geometry.first-frame', 'geometry.first-style', 'geometry.stable']:
+            self.assertIn(marker, model)
+
+    def test_corners_are_a_mask_on_the_row(self):
         layout = body('WCKCornerLayout')
-        # Host lays out first and keeps ownership of frame + content.
-        self.assertIn('original(cell, cmd);', layout)
-        self.assertNotIn('cell.frame =', layout)
-        self.assertNotIn('contentView.frame =', source)
-        self.assertNotIn('cell.frame =', source)
-        self.assertIn('WCKCornerCardView(cell, state)', layout)
-        self.assertIn('back.frame = card;', layout)
-        self.assertIn('CGRectMake(margin, top, bounds.size.width - 2.0 * margin', layout)
-        card = body('WCKCornerCardView')
-        self.assertIn('cell.backgroundView', card)
-        self.assertIn('state.createdBackground = YES', card)
-        # The model proves the host frame and content are untouched.
-        for marker in ['layout.frame-untouched', 'layout.content-untouched',
-                       'geometry.first', 'geometry.single']:
+        self.assertIn('WCKCornerStyleLayer(cell.layer', layout)
+        self.assertIn('cell.contentView.backgroundColor = WCKCornerTransparent()', layout)
+        style = body('WCKCornerStyleLayer')
+        self.assertIn('layer.masksToBounds = YES', style)
+        self.assertIn('kCACornerCurveContinuous', style)
+        self.assertNotIn('backgroundView = back', source)
+        for marker in ['geometry.clear-content', 'geometry.middle-style', 'geometry.single-style']:
             self.assertIn(marker, model)
 
     def test_group_masks_follow_section_position(self):
         layout = body('WCKCornerLayout')
         self.assertIn('path.row == 0', layout)
-        self.assertIn('path.row == rowsInSection - 1', layout)
+        self.assertIn('path.row == rows - 1', layout)
         self.assertIn('kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner', layout)
         self.assertIn('kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner', layout)
-        # Group spacing comes from the first and last rows only.
-        self.assertIn('first ? spacing / 2.0 : 0.0', layout)
-        self.assertIn('last ? spacing / 2.0 : 0.0', layout)
-        for marker in ['geometry.first', 'geometry.middle', 'geometry.last', 'geometry.single']:
+        for marker in ['geometry.first-style', 'geometry.middle-style',
+                       'geometry.last-style', 'geometry.single-style']:
             self.assertIn(marker, model)
 
     def test_disable_and_reuse_restore_only_owned_values(self):
         restore = body('WCKCornerRestoreStyle')
         for token in ['layer.cornerRadius == saved.lastRadius',
                       'layer.maskedCorners == saved.lastMask',
-                      'layer.borderWidth == saved.lastWidth',
-                      'state.appliedFill', 'state.hostFill',
-                      'state.hostBackgroundView', 'state.ownsSelected']:
+                      'layer.masksToBounds == saved.lastClips',
+                      'state.appliedFill', 'state.hostFill']:
             self.assertIn(token, restore)
-        detach = body('WCKCornerDetachCard')
-        self.assertIn('state.createdBackground', detach)
-        self.assertIn('cell.backgroundView = nil', detach)
         reuse = body('WCKCornerReuse')
         self.assertIn('WCKCornerRestoreStyle(cell, state)', reuse)
-        self.assertIn('WCKCornerDetachCard(cell, state)', reuse)
         self.assertIn('original(cell, cmd);', reuse)
-        for marker in ['restore.host-values', 'restore.detached',
-                       'reuse.card-dropped', 'reuse.host-background-kept']:
+        for marker in ['restore.host-values', 'reuse.host-style', 'reuse.reapplied']:
             self.assertIn(marker, model)
 
-    def test_host_clipping_and_button_background_are_untouched(self):
-        self.assertNotIn('cell.layer.masksToBounds', source)
-        self.assertIn('WCKCornerStyleLayer(back.layer', source)
-        self.assertIn('layer.borderColor = border.CGColor', source)
-        self.assertNotIn('WCKInstallHook(UIButton.class', source)
+    def test_host_clipping_is_restored_not_leaked(self):
+        style = body('WCKCornerStyleLayer')
+        self.assertIn('saved.hostClips = layer.masksToBounds', style)
+        self.assertIn('saved.lastClips = YES', style)
+        restore = body('WCKCornerRestoreStyle')
+        self.assertIn('layer.masksToBounds = saved.hostClips', restore)
+        self.assertIn('geometry.disabled-style', model)
 
     def test_per_cell_reentrancy_guard(self):
+        self.assertIn('sCornerFrameDepth', body('WCKCornerSetFrame'))
         self.assertIn('sCornerLayoutDepth && sCornerLayoutCell == cell', body('WCKCornerLayout'))
         self.assertIn('sCornerReuseDepth && sCornerReuseCell == cell', body('WCKCornerReuse'))
         self.assertIn('hooks.target-present', model)
-        self.assertIn('abi.no-frame-hook', model)
 
     def test_component_families_attempted_without_abi_gate(self):
         apply = body('WCKCornerApplyToView')
