@@ -679,6 +679,8 @@ void WCKInstallCorners(void) {
         if (contentClass)
             contentReady = WCKInstallHook(contentClass, @selector(layoutSubviews),
                 (IMP)WCKCornerContentLayout, (IMP *)&sContentLayout, "v", NULL, 0);
+        // Optional safety net; its absence must not disable the cell hooks.
+        (void)contentReady;
         // No row-height hook here: it recursed through numberOfRowsInSection:
         // on iOS 15 and crashed the main thread. Spacing stays a visual-only gap
         // until a non-reentrant way to grow row height exists.
