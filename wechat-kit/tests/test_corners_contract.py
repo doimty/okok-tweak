@@ -55,8 +55,9 @@ class CornersContract(unittest.TestCase):
             self.assertIn(key, source)
             self.assertIn(key, page)
             self.assertIn(key, settings)
-        enabled = body('WCKCornerPageEnabled')
-        self.assertIn('WCKCornerPageKey(owner)', enabled)
+        resolver = body('WCKCornerPageKeyForTable')
+        self.assertIn('WCKCornerPageKey(owner)', resolver)
+        self.assertIn('WCKCornerTablePageKey(table)', resolver)
 
     def test_geometry_is_applied_at_setframe_time(self):
         frame = body('WCKCornerSetFrame')
