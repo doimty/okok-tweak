@@ -33,8 +33,7 @@ class CornersContract(unittest.TestCase):
     def test_only_explicit_host_cell_hooks(self):
         self.assertIn('NSClassFromString(@"MMTableViewCell")', source)
         self.assertIn('NSClassFromString(@"NewMainFrameCell")', source)
-        for forbidden in ['WCKInstallHook(UITableViewCell.class',
-                          'WCKInstallHook(UIButton.class', 'heightForHeaderInSection']:
+        for forbidden in ['WCKInstallHook(UIButton.class', 'heightForHeaderInSection']:
             self.assertNotIn(forbidden, source)
         self.assertIn('WCKInstallHook(UIView.class, @selector(didMoveToWindow)', source)
         self.assertIn('WCKInstallHook(UIView.class, @selector(setBackgroundColor:)', source)
@@ -42,6 +41,8 @@ class CornersContract(unittest.TestCase):
         self.assertIn('@selector(setFrame:)', install)
         self.assertIn('@selector(layoutSubviews)', install)
         self.assertIn('@selector(prepareForReuse)', install)
+        # Base-class trampolines cover subclasses that bypass the cell hooks.
+        self.assertIn('WCKInstallHook(UITableViewCell.class', install)
         # Row-height spacing recursed on iOS 15; it must stay out of the installer.
         self.assertNotIn('tableView:heightForRowAtIndexPath:', install)
 
@@ -72,18 +73,19 @@ class CornersContract(unittest.TestCase):
             self.assertIn(marker, model)
 
     def test_corners_are_a_mask_on_the_row(self):
-        layout = body('WCKCornerLayout')
-        self.assertIn('[CAShapeLayer layer]', layout)
-        self.assertIn('cell.layer.mask = maskLayer', layout)
-        self.assertIn('bezierPathWithRoundedRect:bounds', layout)
-        self.assertIn('byRoundingCorners:corners', layout)
-        self.assertIn('cell.contentView.backgroundColor = WCKCornerTransparent()', layout)
+        apply = body('WCKCornerApplyStyle')
+        self.assertIn('[CAShapeLayer layer]', apply)
+        self.assertIn('cell.layer.mask = maskLayer', apply)
+        self.assertIn('bezierPathWithRoundedRect:bounds', apply)
+        self.assertIn('byRoundingCorners:corners', apply)
+        self.assertIn('cell.contentView.backgroundColor = WCKCornerTransparent()', apply)
+        self.assertIn('WCKCornerApplyStyle(cell);', body('WCKCornerLayout'))
         self.assertNotIn('backgroundView = back', source)
         for marker in ['geometry.clear-content', 'geometry.middle-style', 'geometry.single-style']:
             self.assertIn(marker, model)
 
     def test_group_masks_follow_section_position(self):
-        layout = body('WCKCornerLayout')
+        layout = body('WCKCornerApplyStyle')
         self.assertIn('path.row == 0', layout)
         self.assertIn('path.row == rows - 1', layout)
         self.assertIn('UIRectCornerTopLeft | UIRectCornerTopRight', layout)
@@ -110,7 +112,7 @@ class CornersContract(unittest.TestCase):
         restore = body('WCKCornerRestoreStyle')
         self.assertIn('if (state.ownsMask && cell.layer.mask == state.maskLayer)', restore)
         self.assertIn('cell.layer.mask = state.hostMask', restore)
-        self.assertIn('cell.layer.mask = maskLayer', body('WCKCornerLayout'))
+        self.assertIn('cell.layer.mask = maskLayer', body('WCKCornerApplyStyle'))
         self.assertIn('geometry.disabled-style', model)
 
     def test_per_cell_reentrancy_guard(self):

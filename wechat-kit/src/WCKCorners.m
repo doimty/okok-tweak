@@ -44,8 +44,9 @@ static BOOL sCornerRefreshQueued;
 
 typedef void (*WCKCornerFrameIMP)(id, SEL, CGRect);
 typedef void (*WCKCornerVoidIMP)(id, SEL);
-static WCKCornerFrameIMP sMMFrame, sMainFrame;
-static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse;
+static WCKCornerFrameIMP sMMFrame, sMainFrame, sBaseFrame;
+static WCKCornerVoidIMP sMMLayout, sMainLayout, sMMReuse, sMainReuse, sBaseLayout, sBaseReuse;
+static WCKCornerVoidIMP sContentLayout;
 static const NSUInteger WCKCornerRefreshLimit = 512;
 
 static BOOL WCKCornerObjectsEqual(id a, id b) { return a == b || [a isEqual:b]; }
@@ -492,16 +493,8 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
         original(cell, cmd, target);
     } @finally { --sCornerFrameDepth; sCornerFrameCell = previous; }
 }
-static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP original) {
-    if (!NSThread.isMainThread || (sCornerLayoutDepth && sCornerLayoutCell == cell)) {
-        original(cell, cmd); return;
-    }
-    UITableViewCell *previous = sCornerLayoutCell; sCornerLayoutCell = cell;
-    ++sCornerLayoutDepth;
+static void WCKCornerApplyStyle(UITableViewCell *cell) {
     @try {
-        // The host lays out first; the frame it received was already the card.
-        original(cell, cmd);
-        @try {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
             if (!WCKEnabled(@"corners")) { WCKCornerRestoreStyle(cell, state); return; }
             NSDictionary *snapshot = WCKSettings.shared.snapshot;
@@ -562,9 +555,19 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
                     state.ownsSelected = YES;
                 }
             }
-        } @catch (__unused NSException *exception) {
-            WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
-        }
+    } @catch (__unused NSException *exception) {
+        WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
+    }
+}
+static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP original) {
+    if (!NSThread.isMainThread || (sCornerLayoutDepth && sCornerLayoutCell == cell)) {
+        original(cell, cmd); return;
+    }
+    UITableViewCell *previous = sCornerLayoutCell; sCornerLayoutCell = cell;
+    ++sCornerLayoutDepth;
+    @try {
+        original(cell, cmd);
+        WCKCornerApplyStyle(cell);
     } @finally { --sCornerLayoutDepth; sCornerLayoutCell = previous; }
 }
 
@@ -590,6 +593,20 @@ static void WCKMMCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMMReuse); }
 static void WCKMainCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sMainReuse); }
 static void WCKMMCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMMFrame); }
 static void WCKMainCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sMainFrame); }
+// Base class trampolines: subclasses that override the cell methods without
+// calling super would otherwise never reach this path.
+static void WCKBaseCornerLayout(id c, SEL s) { WCKCornerLayout(c, s, sBaseLayout); }
+static void WCKBaseCornerReuse(id c, SEL s) { WCKCornerReuse(c, s, sBaseReuse); }
+static void WCKBaseCornerFrame(id c, SEL s, CGRect f) { WCKCornerSetFrame(c, s, f, sBaseFrame); }
+static void WCKCornerContentLayout(UIView *view, SEL cmd) {
+    sContentLayout(view, cmd);
+    if (!NSThread.isMainThread) return;
+    UIView *host = view.superview;
+    if (![host isKindOfClass:UITableViewCell.class]) return;
+    // WeChat re-writes the cell background while its content lays out; styling
+    // here keeps the card applied even when the cell's own layout is bypassed.
+    WCKCornerApplyStyle((UITableViewCell *)host);
+}
 
 // Row-height spacing is deliberately NOT hooked: asking the table for its row
 // count from inside heightForRow makes UIKit re-enter the same delegate and
@@ -644,6 +661,24 @@ void WCKInstallCorners(void) {
                                     (IMP *)&sMainReuse, "v", NULL, 0);
             mainReady = mf && ml && mr;
         }
+        // Cover cells whose subclasses override the methods above without
+        // calling super: the base class and the content view still run.
+        BOOL baseReady = NO;
+        if (UITableViewCell.class) {
+            BOOL bf = WCKInstallHook(UITableViewCell.class, @selector(setFrame:),
+                (IMP)WCKBaseCornerFrame, (IMP *)&sBaseFrame, "v", frameArgs, 1);
+            BOOL bl = WCKInstallHook(UITableViewCell.class, @selector(layoutSubviews),
+                (IMP)WCKBaseCornerLayout, (IMP *)&sBaseLayout, "v", NULL, 0);
+            BOOL br = WCKInstallHook(UITableViewCell.class, @selector(prepareForReuse),
+                (IMP)WCKBaseCornerReuse, (IMP *)&sBaseReuse, "v", NULL, 0);
+            baseReady = bf && bl && br;
+        }
+        BOOL contentReady = NO;
+        Class contentClass = NSClassFromString(@"UITableViewCellContentView");
+        if (!contentClass) contentClass = NSClassFromString(@"UITableViewCellContent");
+        if (contentClass)
+            contentReady = WCKInstallHook(contentClass, @selector(layoutSubviews),
+                (IMP)WCKCornerContentLayout, (IMP *)&sContentLayout, "v", NULL, 0);
         // No row-height hook here: it recursed through numberOfRowsInSection:
         // on iOS 15 and crashed the main thread. Spacing stays a visual-only gap
         // until a non-reentrant way to grow row height exists.
@@ -677,7 +712,7 @@ void WCKInstallCorners(void) {
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
         WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
-        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady
+        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue

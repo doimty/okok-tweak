@@ -485,7 +485,7 @@ static void abi(void) {
     CHECK_ID("hooks.nonempty",hookTargets.count>0);
     for (NSDictionary *entry in hookTargets) {
         NSString *c=entry[@"class"], *sel=entry[@"selector"];
-        BOOL cellTarget=[@[@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
+        BOOL cellTarget=[@[@"UITableViewCell",@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
         BOOL pageTarget=[@[@"NewMainFrameViewController",@"ContactsViewController",
                            @"FindFriendEntryViewController",@"MoreViewController",
                            @"ContactInfoViewController"] containsObject:c];
