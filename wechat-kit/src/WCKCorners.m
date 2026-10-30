@@ -454,7 +454,20 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
 static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
                                  CGFloat width, UIColor *border, WCKCornerState *state) {
     if (!layer) return;
-    for (WCKCornerLayerState *record in state.layers) if (record.layer == layer) return;
+    for (WCKCornerLayerState *record in state.layers) {
+        if (record.layer != layer) continue;
+        // Already ours: update in place instead of stripping and re-applying,
+        // so a scroll pass never shows an un-rounded cell.
+        record.lastRadius = radius; record.lastMask = mask;
+        record.lastCurve = kCACornerCurveContinuous;
+        layer.cornerRadius = radius; layer.maskedCorners = mask;
+        layer.cornerCurve = kCACornerCurveContinuous;
+        if (width > 0 && border) {
+            record.lastWidth = width; record.lastColor = border; record.ownsBorder = YES;
+            layer.borderWidth = width; layer.borderColor = border.CGColor;
+        }
+        return;
+    }
     WCKCornerLayerState *saved = [WCKCornerLayerState new]; saved.layer = layer;
     saved.radius = layer.cornerRadius; saved.mask = layer.maskedCorners; saved.curve = layer.cornerCurve;
     saved.lastRadius = radius; saved.lastMask = mask; saved.lastCurve = kCACornerCurveContinuous;
@@ -473,24 +486,22 @@ static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
 }
 // 德发-style geometry: the row is inset when the host hands the frame to
 // UIKit, so hit testing, content layout and animation all use the card size.
+// Deliberately avoids indexPath/numberOfRowsInSection here: asking the table for
+// row data from inside setFrame re-enters its row-data refresh.
 static CGRect WCKCornerTargetFrame(UITableViewCell *cell, CGRect incoming,
-                                   NSDictionary *snapshot, BOOL *firstOut, BOOL *lastOut) {
-    UITableView *table = nil;
-    if (!WCKCornerContext(cell, snapshot, &table, NULL, NULL)) return incoming;
-    NSIndexPath *path = [table indexPathForCell:cell];
-    if (!path) return incoming;
-    NSInteger rows = [table numberOfRowsInSection:path.section];
-    if (rows <= 0 || path.row < 0 || path.row >= rows) return incoming;
+                                   NSDictionary *snapshot) {
+    UITableView *table = WCKCornerTable(cell);
+    if (!table) return incoming;
+    UIViewController *owner = WCKCornerOwner(table);
+    NSString *pageKey = WCKCornerPageKey(owner);
+    if (!pageKey || ![snapshot[pageKey] boolValue]) return incoming;
     CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
     margin = MIN(margin, MAX(0.0, incoming.size.width / 2.0 - 1.0));
-    BOOL first = path.row == 0, last = path.row == rows - 1;
     CGRect out = incoming;
     if (margin > 0 && out.size.width > 2.0 * margin) {
         out.origin.x += margin;
         out.size.width -= 2.0 * margin;
     }
-    if (firstOut) *firstOut = first;
-    if (lastOut) *lastOut = last;
     return out;
 }
 static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKCornerFrameIMP original) {
@@ -503,7 +514,7 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
         CGRect target = frame;
         @try {
             if (WCKEnabled(@"corners"))
-                target = WCKCornerTargetFrame(cell, frame, WCKSettings.shared.snapshot, NULL, NULL);
+                target = WCKCornerTargetFrame(cell, frame, WCKSettings.shared.snapshot);
         } @catch (__unused NSException *exception) { target = frame; }
         // Depth stays raised so a subclass trampoline forwards instead of
         // insetting the same row twice.
@@ -526,13 +537,13 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             UITableView *table = nil; NSIndexPath *path = nil;
             if (!WCKCornerContext(cell, snapshot, &table, &path, NULL) ||
                 !WCKCornerFiniteRect(cell.bounds)) {
-                WCKCornerRestoreStyle(cell, state);
+                // Transient during scrolling/reuse: keep the style we already
+                // applied instead of stripping it and losing the card.
                 return;
             }
             if (!sCornerCells) sCornerCells = [NSHashTable weakObjectsHashTable];
             [sCornerCells addObject:cell];
             state = WCKCornerGetState(cell, YES);
-            WCKCornerRestoreStyle(cell, state);
             NSInteger rows = [table numberOfRowsInSection:path.section];
             BOOL first = path.row == 0;
             BOOL last = rows > 0 && path.row == rows - 1;
@@ -551,8 +562,11 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             if (cell.backgroundView)
                 WCKCornerStyleLayer(cell.backgroundView.layer, radius, mask, 0, nil, state);
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
-            state.hostFill = cell.backgroundColor;
-            state.appliedFill = fill; state.ownsFill = YES;
+            if (!state.ownsFill) {
+                state.hostFill = cell.backgroundColor;
+                state.ownsFill = YES;
+            }
+            state.appliedFill = fill;
             cell.backgroundColor = fill;
             if (!state.ownsContentFill) {
                 state.hostContentFill = cell.contentView.backgroundColor;
