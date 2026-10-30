@@ -67,19 +67,30 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @end
 @implementation CAShapeLayer @end
 @implementation CALayer (FixtureLayerFactory) @end
-static UIRectCorner sFixtureCorners;
-static CGSize sFixtureRadii;
-@implementation UIBezierPath
+static NSMutableDictionary *sFixturePathInfo;
+@implementation UIBezierPath {
+    UIRectCorner _corners;
+    CGSize _radii;
+}
 + (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
                              cornerRadii:(CGSize)radii {
-    sFixtureCorners = corners;
-    sFixtureRadii = radii;
+    UIBezierPath *path = [self new];
+    path->_corners = corners;
+    path->_radii = radii;
     (void)rect;
-    return [self new];
+    return path;
 }
-- (CGPathRef)CGPath { static char token; return (CGPathRef)&token; }
-+ (UIRectCorner)fixtureLastCorners { return sFixtureCorners; }
-+ (CGSize)fixtureLastRadii { return sFixtureRadii; }
+- (CGPathRef)CGPath {
+    void *token = malloc(1);
+    if (!sFixturePathInfo) sFixturePathInfo = [NSMutableDictionary dictionary];
+    sFixturePathInfo[[NSValue valueWithPointer:token]] =
+        @[@(_corners), @(_radii.width), @(_radii.height)];
+    return (CGPathRef)token;
+}
++ (NSArray *)fixtureInfoForPath:(CGPathRef)path {
+    if (!path || !sFixturePathInfo) return nil;
+    return sFixturePathInfo[[NSValue valueWithPointer:(void *)path]];
+}
 @end
 @implementation UIResponder @end
 @implementation UITraitCollection
@@ -314,8 +325,9 @@ static void expectStyle(WCKCornerScene *s, CGFloat radius, UIRectCorner corners,
                         const char *tag) {
     CALayer *maskLayer=s.cell.layer.mask;
     CHECK_ID(tag,[maskLayer isKindOfClass:CAShapeLayer.class]);
-    CHECK_ID(tag,near([UIBezierPath fixtureLastRadii].width,radius) &&
-        [UIBezierPath fixtureLastCorners]==corners);
+    NSArray *info=[UIBezierPath fixtureInfoForPath:((CAShapeLayer *)maskLayer).path];
+    CHECK_ID(tag,info!=nil && near([info[1] doubleValue],radius) &&
+        [info[0] unsignedIntegerValue]==corners);
     CHECK_ID(tag,sameRect(maskLayer.frame,s.cell.bounds));
 }
 static void hostStyle(WCKCornerScene *s, const char *tag) {
@@ -382,7 +394,9 @@ static void geometry(void) {
     narrow.cell.frame=CGRectMake(40,100,20,60);
     CHECK_ID("geometry.narrow-card",narrow.cell.frame.size.width>=1 && narrow.cell.frame.size.height>0);
     layout(narrow);
-    CHECK_ID("geometry.narrow-radius",[UIBezierPath fixtureLastRadii].width<=
+    NSArray *narrowInfo=[UIBezierPath fixtureInfoForPath:((CAShapeLayer *)narrow.cell.layer.mask).path];
+    CHECK_ID("geometry.narrow-radius",narrowInfo!=nil &&
+        [narrowInfo[1] doubleValue]<=
         MIN(narrow.cell.bounds.size.width,narrow.cell.bounds.size.height)/2.0+0.001);
 
     // Disabling restores both the frame and the layer.
