@@ -618,9 +618,9 @@ static CGFloat WCKCornerHeight(id self, SEL cmd, UITableView *table, NSIndexPath
     IMP original = NULL;
     for (NSUInteger i = 0; i < 5; ++i) {
         Class cls = sCornerHeightClasses[i];
-        if (cls && [self isKindOfClass:cls]) { original = sCornerHeightOrigins[i]; break; }
+        if (cls && [self isKindOfClass:cls]) { original = sCornerHeightOriginals[i]; break; }
     }
-    if (!original) return UITableViewAutomaticDimension;
+    if (!original) return -1.0; // UITableViewAutomaticDimension
     CGFloat height = ((WCKCornerHeightIMP)original)(self, cmd, table, path);
     if (!WCKEnabled(@"corners") || height <= 0 || !path) return height;
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
