@@ -64,6 +64,21 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 }
 - (void)dealloc { if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); }
 @end
+@implementation CAShapeLayer @end
+static UIRectCorner sFixtureCorners;
+static CGSize sFixtureRadii;
+@implementation UIBezierPath
++ (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
+                             cornerRadii:(CGSize)radii {
+    sFixtureCorners = corners;
+    sFixtureRadii = radii;
+    (void)rect;
+    return [self new];
+}
+- (CGPathRef)CGPath { static char token; return (CGPathRef)&token; }
++ (UIRectCorner)fixtureLastCorners { return sFixtureCorners; }
++ (CGSize)fixtureLastRadii { return sFixtureRadii; }
+@end
 @implementation UIResponder @end
 @implementation UITraitCollection
 - (UIUserInterfaceStyle)userInterfaceStyle { return UIUserInterfaceStyleLight; }
@@ -293,16 +308,17 @@ static void setFrameExpect(WCKCornerScene *s, CGRect incoming, CGRect expected, 
     s.cell.frame=incoming;
     CHECK_ID(tag,sameRect(s.cell.frame,expected));
 }
-static void expectStyle(WCKCornerScene *s, CGFloat radius, CACornerMask mask, BOOL clips,
+static void expectStyle(WCKCornerScene *s, CGFloat radius, UIRectCorner corners,
                         const char *tag) {
-    CALayer *layer=s.cell.layer;
-    CHECK_ID(tag,near(layer.cornerRadius,radius) && layer.maskedCorners==mask &&
-        layer.masksToBounds==clips);
-    if (clips) CHECK_ID(tag,[layer.cornerCurve isEqual:kCACornerCurveContinuous]);
+    CALayer *maskLayer=s.cell.layer.mask;
+    CHECK_ID(tag,[maskLayer isKindOfClass:CAShapeLayer.class]);
+    CHECK_ID(tag,near([UIBezierPath fixtureLastRadii].width,radius) &&
+        [UIBezierPath fixtureLastCorners]==corners);
+    CHECK_ID(tag,sameRect(maskLayer.frame,s.cell.bounds));
 }
 static void hostStyle(WCKCornerScene *s, const char *tag) {
     CALayer *layer=s.cell.layer;
-    CHECK_ID(tag,near(layer.cornerRadius,3) && layer.maskedCorners==allCorners &&
+    CHECK_ID(tag,layer.mask==nil && near(layer.cornerRadius,3) && layer.maskedCorners==allCorners &&
         [layer.cornerCurve isEqual:@"host"] && !layer.masksToBounds);
     CHECK_ID(tag,near(layer.borderWidth,1) && sameColor(layer.borderColor,s.hostBorder.CGColor));
     CHECK_ID(tag,s.cell.backgroundColor==s.hostColor);
@@ -321,37 +337,37 @@ static void geometry(void) {
     setting(@"globalCornerSpacing",@8);
     setting(@"globalCornerRadius",@12);
 
-    CACornerMask top=kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner;
-    CACornerMask bottom=kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner;
+    UIRectCorner top=UIRectCornerTopLeft|UIRectCornerTopRight;
+    UIRectCorner bottom=UIRectCornerBottomLeft|UIRectCornerBottomRight;
     CGRect host=CGRectMake(0,100,420,60);
 
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.frame");
     layout(first);
-    expectStyle(first,12,top,YES,"geometry.first-style");
+    expectStyle(first,12,top,"geometry.first-style");
     CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
         [UIColor clearColor].CGColor));
 
     WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
     setFrameExpect(middle,host,insetFrame(host,24,0,0),"geometry.middle-frame");
     layout(middle);
-    expectStyle(middle,12,0,YES,"geometry.middle-style");
+    expectStyle(middle,12,0,"geometry.middle-style");
 
     WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
     setFrameExpect(last,host,insetFrame(host,24,0,0),"geometry.last-frame");
     layout(last);
-    expectStyle(last,12,bottom,YES,"geometry.last-style");
+    expectStyle(last,12,bottom,"geometry.last-style");
 
     WCKCornerScene *single=sceneWithRows(ContactsViewController.class,0,0,1);
     setFrameExpect(single,host,insetFrame(host,24,0,0),"geometry.single-frame");
     layout(single);
-    expectStyle(single,12,allCorners,YES,"geometry.single-style");
+    expectStyle(single,12,UIRectCornerTopLeft|UIRectCornerTopRight|UIRectCornerBottomLeft|UIRectCornerBottomRight,"geometry.single-style");
 
     // Zero spacing must not leave a hole: the row keeps its full height.
     setting(@"globalCornerSpacing",@0);
     setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-zero-frame");
     layout(first);
-    expectStyle(first,12,top,YES,"geometry.spacing-zero-style");
+    expectStyle(first,12,top,"geometry.spacing-zero-style");
     setting(@"globalCornerSpacing",@8);
     setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-back-frame");
 
@@ -401,7 +417,7 @@ static void restore(void) {
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     setFrameExpect(s,host,insetFrame(host,24,0,0),"restore.inset");
     layout(s);
-    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"restore.applied");
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"restore.applied");
 
     setting(@"corners",@NO);
     setFrameExpect(s,host,host,"restore.frame");
@@ -417,7 +433,7 @@ static void restore(void) {
     // A dequeued cell starts from the host state until the table re-frames it.
     setFrameExpect(s,host,insetFrame(host,24,0,0),"reuse.inset-after");
     layout(s);
-    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"reuse.reapplied");
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"reuse.reapplied");
 }
 
 static void drainRefresh(void) {
@@ -434,14 +450,14 @@ static void refresh(void) {
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     setFrameExpect(s,host,insetFrame(host,24,0,0),"refresh.initial-frame");
     layout(s);
-    expectStyle(s,12,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"refresh.initial");
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"refresh.initial");
     NSUInteger needs=s.cell.fixtureNeedsLayoutCalls;
     setting(@"globalCornerRadius",@18);
     WCKRefreshCorners();
     drainRefresh();
     CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1);
     layout(s);
-    expectStyle(s,18,kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,YES,"refresh.radius");
+    expectStyle(s,18,UIRectCornerTopLeft|UIRectCornerTopRight,"refresh.radius");
     setting(@"globalCornerRadius",@12);
     setting(@"corners",@NO);
     WCKRefreshCorners();

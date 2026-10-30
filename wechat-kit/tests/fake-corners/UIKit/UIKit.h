@@ -32,6 +32,19 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 + (instancetype)blackColor;
 @end
 
+typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
+    UIRectCornerTopLeft = 1U << 0, UIRectCornerTopRight = 1U << 1,
+    UIRectCornerBottomLeft = 1U << 2, UIRectCornerBottomRight = 1U << 3,
+    UIRectCornerAllCorners = ~0UL
+};
+@interface UIBezierPath : NSObject
++ (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
+                             cornerRadii:(CGSize)radii;
+@property(nonatomic, readonly) CGPathRef CGPath;
++ (UIRectCorner)fixtureLastCorners;
++ (CGSize)fixtureLastRadii;
+@end
+
 @interface CALayer : NSObject {
     CGColorRef _fixtureBorderColor;
 }
@@ -41,6 +54,10 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @property(nonatomic) CGFloat borderWidth;
 @property(nonatomic) CGColorRef borderColor;
 @property(nonatomic) BOOL masksToBounds;
+@property(nonatomic, strong) CALayer *mask;
+@end
+@interface CAShapeLayer : CALayer
+@property(nonatomic) CGPathRef path;
 @end
 
 @class UIView, UIWindow, UITableViewCell;

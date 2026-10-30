@@ -73,11 +73,11 @@ class CornersContract(unittest.TestCase):
 
     def test_corners_are_a_mask_on_the_row(self):
         layout = body('WCKCornerLayout')
-        self.assertIn('WCKCornerStyleLayer(cell.layer', layout)
+        self.assertIn('[CAShapeLayer layer]', layout)
+        self.assertIn('cell.layer.mask = maskLayer', layout)
+        self.assertIn('bezierPathWithRoundedRect:bounds', layout)
+        self.assertIn('byRoundingCorners:corners', layout)
         self.assertIn('cell.contentView.backgroundColor = WCKCornerTransparent()', layout)
-        style = body('WCKCornerStyleLayer')
-        self.assertIn('layer.masksToBounds = YES', style)
-        self.assertIn('kCACornerCurveContinuous', style)
         self.assertNotIn('backgroundView = back', source)
         for marker in ['geometry.clear-content', 'geometry.middle-style', 'geometry.single-style']:
             self.assertIn(marker, model)
@@ -86,8 +86,8 @@ class CornersContract(unittest.TestCase):
         layout = body('WCKCornerLayout')
         self.assertIn('path.row == 0', layout)
         self.assertIn('path.row == rows - 1', layout)
-        self.assertIn('kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner', layout)
-        self.assertIn('kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner', layout)
+        self.assertIn('UIRectCornerTopLeft | UIRectCornerTopRight', layout)
+        self.assertIn('UIRectCornerBottomLeft | UIRectCornerBottomRight', layout)
         for marker in ['geometry.first-style', 'geometry.middle-style',
                        'geometry.last-style', 'geometry.single-style']:
             self.assertIn(marker, model)
@@ -96,7 +96,7 @@ class CornersContract(unittest.TestCase):
         restore = body('WCKCornerRestoreStyle')
         for token in ['layer.cornerRadius == saved.lastRadius',
                       'layer.maskedCorners == saved.lastMask',
-                      'layer.masksToBounds == saved.lastClips',
+                      'cell.layer.mask = state.hostMask',
                       'state.appliedFill', 'state.hostFill']:
             self.assertIn(token, restore)
         reuse = body('WCKCornerReuse')

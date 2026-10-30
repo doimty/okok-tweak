@@ -26,8 +26,10 @@ static BOOL sCornerRefreshQueued;
 @implementation WCKCornerLayerState @end
 
 @interface WCKCornerState : NSObject
-@property(nonatomic) BOOL ownsFill, ownsViewFill, ownsSelected, createdBackground;
-@property(nonatomic) BOOL ownsContentFill, ownsClips;
+@property(nonatomic) BOOL ownsFill, ownsViewFill, ownsSelected, ownsContentFill;
+@property(nonatomic) BOOL ownsMask;
+@property(nonatomic, strong) CAShapeLayer *maskLayer;
+@property(nonatomic, weak) CALayer *hostMask;
 @property(nonatomic, strong) UIColor *hostContentFill, *appliedContentFill;
 @property(nonatomic, strong) UIColor *hostFill, *appliedFill;
 @property(nonatomic, strong) UIColor *hostViewFill, *appliedViewFill;
@@ -444,6 +446,8 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
         cell.backgroundColor = state.hostFill;
     if (state.ownsSelected && state.fixedSelectedView && cell.selectedBackgroundView == state.fixedSelectedView)
         state.fixedSelectedView.frame = state.hostSelectedFrame;
+    if (state.ownsMask && cell.layer.mask == state.maskLayer) cell.layer.mask = state.hostMask;
+    state.ownsMask = NO; state.maskLayer = nil; state.hostMask = nil;
     if (state.ownsContentFill && WCKCornerObjectsEqual(cell.contentView.backgroundColor, state.appliedContentFill))
         cell.contentView.backgroundColor = state.hostContentFill;
     state.ownsFill = NO; state.hostFill = nil; state.appliedFill = nil;
@@ -550,17 +554,27 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             CGRect bounds = cell.bounds;
             CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
             radius = MIN(radius, MIN(bounds.size.width, bounds.size.height) / 2.0);
-            CACornerMask mask = 0;
-            if (first) mask |= kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
-            if (last) mask |= kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
-            if (radius <= 0.5) mask = 0;
-            CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerStroke", 0, 4);
-            UIColor *border = WCKCornerFill(snapshot, @"globalCornerStrokeColor");
-            // Clip the row itself so icons/text follow the corner instead of
-            // sitting on a rounded sticker.
-            WCKCornerStyleLayer(cell.layer, radius, mask, width, border, state);
-            if (cell.backgroundView)
-                WCKCornerStyleLayer(cell.backgroundView.layer, radius, mask, 0, nil, state);
+            UIRectCorner corners = 0;
+            if (first) corners |= UIRectCornerTopLeft | UIRectCornerTopRight;
+            if (last) corners |= UIRectCornerBottomLeft | UIRectCornerBottomRight;
+            if (radius <= 0.5) corners = 0;
+            // A shape-layer mask survives host writes to backgroundColor and
+            // layer geometry, which is what kept dropping the corners on scroll.
+            if (!state.maskLayer) {
+                state.maskLayer = [CAShapeLayer layer];
+                state.hostMask = cell.layer.mask;
+                state.ownsMask = YES;
+            }
+            CAShapeLayer *maskLayer = state.maskLayer;
+            maskLayer.frame = bounds;
+            if (corners == 0) {
+                maskLayer.path = NULL;
+            } else {
+                UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bounds
+                    byRoundingCorners:corners cornerRadii:CGSizeMake(radius, radius)];
+                maskLayer.path = path.CGPath;
+            }
+            if (cell.layer.mask != maskLayer) cell.layer.mask = maskLayer;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
             if (!state.ownsFill) {
                 state.hostFill = cell.backgroundColor;
@@ -581,7 +595,6 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
                     state.hostSelectedFrame = selected.frame;
                     state.ownsSelected = YES;
                 }
-                WCKCornerStyleLayer(selected.layer, radius, mask, 0, nil, state);
             }
         } @catch (__unused NSException *exception) {
             WCKSetModuleStatus(@"corners.debug.last", @"列表圆角准备异常；保留宿主布局");
