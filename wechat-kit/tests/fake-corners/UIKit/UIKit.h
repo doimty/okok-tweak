@@ -54,6 +54,7 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @property(nonatomic) CGFloat borderWidth;
 @property(nonatomic) CGColorRef borderColor;
 @property(nonatomic) BOOL masksToBounds;
+@property(nonatomic) CGRect frame;
 @property(nonatomic, strong) CALayer *mask;
 @end
 @interface CAShapeLayer : CALayer
