@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contracts for the 德发-style list-cell corners; not UIKit behavior tests."""
+"""Static contracts for the 寰峰彂-style list-cell corners; not UIKit behavior tests."""
 import argparse
 import re
 import unittest
@@ -71,7 +71,7 @@ class CornersContract(unittest.TestCase):
         height = body('WCKCornerHeight')
         self.assertIn('tableView:heightForRowAtIndexPath:', body('WCKInstallCorners'))
         self.assertIn('height + extra', height)
-        for marker in ['geometry.first-frame', 'geometry.first-style', 'geometry.stable']:
+        for marker in ['geometry.frame', 'geometry.first-style', 'geometry.stable']:
             self.assertIn(marker, model)
 
     def test_corners_are_a_mask_on_the_row(self):

@@ -326,7 +326,7 @@ static void geometry(void) {
     CGRect host=CGRectMake(0,100,420,60);
 
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
-    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.first-frame");
+    setFrameExpect(first,host,insetFrame(host,24,4,0),"geometry.frame");
     layout(first);
     expectStyle(first,12,top,YES,"geometry.first-style");
     CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
