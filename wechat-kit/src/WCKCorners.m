@@ -388,7 +388,8 @@ static UIColor *WCKCornerDefaultFill(UITableView *table) {
     BOOL dark = NO;
     @try { dark = table.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark; }
     @catch (__unused NSException *exception) { dark = NO; }
-    return dark ? [UIColor colorWithWhite:1.0 alpha:0.025] : [UIColor colorWithWhite:0.0 alpha:0.02];
+    return dark ? [UIColor colorWithRed:1 green:1 blue:1 alpha:0.025]
+                : [UIColor colorWithRed:0 green:0 blue:0 alpha:0.02];
 }
 // One instance so the restore check can recognise exactly what we assigned.
 static UIColor *WCKCornerTransparent(void) {
