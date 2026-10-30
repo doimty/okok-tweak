@@ -123,11 +123,6 @@ static void WCKCornerReloadConfig(void) {
     sCornerConfig.spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
     sCornerConfig.valid = YES;
 }
-static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot) {
-    NSString *key = WCKCornerPageKey(owner);
-    if (!key) return NO;
-    return [snapshot[key] boolValue];
-}
 // Some builds place the list inside a container controller, so the responder
 // chain never reaches the page controller. The table's own class is a stable
 // second signal (e.g. MainFrameTableView is the home chat list).
