@@ -247,6 +247,37 @@ static void WCKCornerClearView(UIView *view) {
         view.layer.cornerCurve = saved[@"hostCurve"];
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
+static void WCKCornerRoundChildren(UIView *view, CGFloat radius, NSString *family) {
+    if (![family isEqualToString:@"searchCorner"] && ![family isEqualToString:@"menuCorner"] &&
+        ![family isEqualToString:@"systemPopupCorner"]) return;
+    Class fieldClass = NSClassFromString(@"UITextField");
+    for (UIView *child in view.subviews) {
+        if ([child isKindOfClass:UITableViewCell.class]) continue;
+        if (child.layer.cornerRadius > 0.01) continue; // host-owned
+        if (fieldClass && [child isKindOfClass:fieldClass]) {
+            child.layer.cornerRadius = radius;
+            child.layer.cornerCurve = kCACornerCurveContinuous;
+            child.layer.masksToBounds = YES;
+            continue;
+        }
+        UIColor *colour = child.backgroundColor;
+        if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
+            child.layer.cornerRadius = radius;
+            child.layer.cornerCurve = kCACornerCurveContinuous;
+            child.layer.masksToBounds = YES;
+            continue;
+        }
+        for (UIView *inner in child.subviews) {
+            if (inner.layer.cornerRadius > 0.01) continue;
+            UIColor *innerColour = inner.backgroundColor;
+            if (innerColour && CGColorGetAlpha(innerColour.CGColor) > 0.01) {
+                inner.layer.cornerRadius = radius;
+                inner.layer.cornerCurve = kCACornerCurveContinuous;
+                inner.layer.masksToBounds = YES;
+            }
+        }
+    }
+}
 static void WCKCornerApplyToView(UIView *view) {
     if (!NSThread.isMainThread || ![view isKindOfClass:UIView.class]) return;
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
@@ -263,7 +294,17 @@ static void WCKCornerApplyToView(UIView *view) {
         // overwrite it or restore the old snapshot later.
         WCKCornerClearView(view); saved = nil;
     }
-    if (!enabled || !WCKCornerViewPaints(view, family)) { WCKCornerClearView(view); return; }
+    if (!enabled || !WCKCornerViewPaints(view, family)) {
+        WCKCornerClearView(view);
+        // The painted part of a search bar / menu lives in a subview, so keep
+        // rounding children even when this view owns no visible background.
+        if (enabled) {
+            CGFloat childRadius = (CGFloat)WCKCornerNumber(snapshot,
+                [family stringByAppendingString:@"Radius"], [snapshot[@"globalCornerRadius"] doubleValue], 24);
+            WCKCornerRoundChildren(view, childRadius, family);
+        }
+        return;
+    }
     if (!saved && view.layer.cornerRadius > 0.01) return; // host-owned geometry
     NSString *radiusFamily = ([family isEqualToString:@"chatFileCorner"] ||
         [family isEqualToString:@"chatLocationCorner"]) ? @"chatImageCorner" : family;
@@ -279,37 +320,7 @@ static void WCKCornerApplyToView(UIView *view) {
     view.layer.cornerCurve = kCACornerCurveContinuous;
     view.layer.masksToBounds = YES;
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    // Search bars, menus and system popups paint through an inner container, so
-    // the outer view's own layer is invisible. Round the painted child too.
-    if ([family isEqualToString:@"searchCorner"] || [family isEqualToString:@"menuCorner"] ||
-        [family isEqualToString:@"systemPopupCorner"]) {
-        for (UIView *child in view.subviews) {
-            if ([child isKindOfClass:UITableViewCell.class]) continue;
-            if (child.layer.cornerRadius > 0.01) continue; // host-owned
-            Class fieldClass = NSClassFromString(@"UITextField");
-            if (fieldClass && [child isKindOfClass:fieldClass]) {
-                // A search field paints its own background image; clipping the
-                // field is what actually makes the box round.
-                child.layer.cornerRadius = radius;
-                child.layer.cornerCurve = kCACornerCurveContinuous;
-                child.layer.masksToBounds = YES;
-                continue;
-            }
-            UIColor *colour = child.backgroundColor;
-            if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
-                child.layer.cornerRadius = radius;
-                child.layer.cornerCurve = kCACornerCurveContinuous;
-                child.layer.masksToBounds = YES;
-                continue;
-            }
-            for (UIView *inner in child.subviews) {
-                UIColor *innerColour = inner.backgroundColor;
-                if (inner.layer.cornerRadius > 0.01) continue;
-                if (innerColour && CGColorGetAlpha(innerColour.CGColor) > 0.01) {
-                    inner.layer.cornerRadius = radius;
-                    inner.layer.cornerCurve = kCACornerCurveContinuous;
-                    inner.layer.masksToBounds = YES;
-                }
+    WCKCornerRoundChildren(view, radius, family);
             }
         }
     }
