@@ -41,8 +41,7 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 + (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
                              cornerRadii:(CGSize)radii;
 @property(nonatomic, readonly) CGPathRef CGPath;
-+ (UIRectCorner)fixtureLastCorners;
-+ (CGSize)fixtureLastRadii;
++ (NSArray *)fixtureInfoForPath:(CGPathRef)path;
 @end
 
 @interface CALayer : NSObject {
