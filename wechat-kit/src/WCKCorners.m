@@ -821,14 +821,14 @@ void WCKInstallCorners(void) {
             mainReady = mf && ml && mr;
         }
         BOOL multiReady = NO;
-        Class multi = NSClassFromString(@MMMultiMenuTableViewCell);
+        Class multi = NSClassFromString(@"MMMultiMenuTableViewCell");
         if (multi) {
             BOOL f = WCKInstallHook(multi, @selector(setFrame:), (IMP)WCKMultiCornerFrame,
-                                    (IMP *)&sMultiFrame, v, frameArgs, 1);
+                                    (IMP *)&sMultiFrame, "v", frameArgs, 1);
             BOOL l = WCKInstallHook(multi, @selector(layoutSubviews), (IMP)WCKMultiCornerLayout,
-                                    (IMP *)&sMultiLayout, v, NULL, 0);
+                                    (IMP *)&sMultiLayout, "v", NULL, 0);
             BOOL r = WCKInstallHook(multi, @selector(prepareForReuse), (IMP)WCKMultiCornerReuse,
-                                    (IMP *)&sMultiReuse, v, NULL, 0);
+                                    (IMP *)&sMultiReuse, "v", NULL, 0);
             multiReady = f && l && r;
         }
         // Cover cells whose subclasses override the methods above without
@@ -884,7 +884,8 @@ void WCKInstallCorners(void) {
         WCKSetModuleStatus(@"corners.verified", (avatarReady || profileAvatarReady || fakeAvatarReady ||
             navReady || newNavReady || tabReady) ? @"ready" : @"未找到已核宿主类");
         WCKSetModuleStatus(@"corners.views", viewMoved && viewColour && viewLayout ? @"ready" : @"控件圆角 hook 不可用");
-        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady && (multiReady || !NSClassFromString(@"MMMultiMenuTableViewCell"))
+        BOOL multiOptional = !NSClassFromString(@"MMMultiMenuTableViewCell") || multiReady;
+        WCKSetModuleStatus(@"corners", frame && layout && reuse && mainReady && baseReady && multiOptional
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
