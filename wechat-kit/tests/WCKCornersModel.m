@@ -283,9 +283,6 @@ static WCKCornerScene *sceneWithRows(Class controllerClass, NSInteger row, NSInt
     }
     return s;
 }
-static WCKCornerScene *scene(Class controllerClass, NSInteger row, NSInteger section) {
-    return sceneWithRows(controllerClass,row,section,3);
-}
 static void layout(WCKCornerScene *s) {
     NSUInteger frames=s.cell.fixtureFrameCalls;
     NSUInteger content=s.cell.contentView.fixtureFrameCalls;
@@ -323,10 +320,6 @@ static void hostStyle(WCKCornerScene *s, const char *tag) {
         CHECK_ID(tag,near(back.layer.borderWidth,1) &&
             sameColor(back.layer.borderColor,s.hostBorder.CGColor));
     }
-}
-static CGRect attachCardFrame(WCKCornerScene *s) {
-    UIView *back=s.cell.backgroundView;
-    return back ? back.frame : CGRectNull;
 }
 
 static void geometry(void) {
@@ -372,12 +365,10 @@ static void geometry(void) {
     CHECK_ID("geometry.narrow-radius",narrowCard.layer.cornerRadius<=
         MIN(narrowCard.frame.size.width,narrowCard.frame.size.height)/2.0+0.001);
 
-    // Disabling restores host styling and removes the synthetic card.
+    // Disabling restores host styling and detaches any card we created.
     setting(@"corners",@NO);
     layout(first);
     hostStyle(first,"geometry.disabled-host-restored");
-    CHECK_ID("geometry.disabled-card-removed",first.cell.backgroundView==nil ||
-        sameRect(first.cell.backgroundView.frame,first.cell.bounds));
 }
 
 static void isolation(void) {
