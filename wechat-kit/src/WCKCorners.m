@@ -526,6 +526,20 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
         original(cell, cmd, target);
     } @finally { --sCornerFrameDepth; sCornerFrameCell = previous; }
 }
+// Visible diagnostic: the settings page prints this in the module status row,
+// so a device screenshot tells us why rows were skipped instead of guessing.
+static NSString *sCornerDiag;
+static NSTimeInterval sCornerDiagAt;
+static void WCKCornerNote(NSString *cellClass, UITableView *table, NSString *why, BOOL force) {
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (!force && now - sCornerDiagAt < 1.0 && sCornerDiag.length) return;
+    sCornerDiagAt = now;
+    NSString *tableName = table ? NSStringFromClass(table.class) : @"nil";
+    NSString *ownerName = table ? NSStringFromClass(WCKCornerOwner(table).class) : @"nil";
+    sCornerDiag = [NSString stringWithFormat:@"%@ | t=%@ o=%@ | %@",
+        cellClass ?: @"?", tableName, ownerName, why ?: @"?"];
+    WCKSetModuleStatus(@"corners.debug", sCornerDiag);
+}
 static void WCKCornerApplyStyle(UITableViewCell *cell) {
     @try {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
@@ -534,6 +548,7 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             UITableView *table = nil; NSIndexPath *path = nil;
             if (!WCKCornerContext(cell, snapshot, &table, &path, NULL) ||
                 !WCKCornerFiniteRect(cell.bounds)) {
+                WCKCornerNote(NSStringFromClass(cell.class), WCKCornerTable(cell), @"skip:context", YES);
                 // Transient during scrolling/reuse: keep the style we already
                 // applied instead of stripping it and losing the card.
                 return;
