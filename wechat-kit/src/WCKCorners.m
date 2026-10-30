@@ -38,6 +38,9 @@ static BOOL sCornerRefreshQueued;
 @property(nonatomic) CGFloat fixedSelectedRadius;
 @property(nonatomic) CACornerMask fixedSelectedMask;
 @property(nonatomic, weak) UIView *fixedSelectedView;
+@property(nonatomic) CGRect appliedBounds;
+@property(nonatomic) CGFloat appliedRadius;
+@property(nonatomic) NSUInteger appliedCorners;
 @property(nonatomic, strong) NSMutableArray<WCKCornerLayerState *> *layers;
 @end
 @implementation WCKCornerState @end
@@ -92,6 +95,7 @@ static UIViewController *WCKCornerOwner(UITableView *table) {
 static NSString *WCKCornerPageKey(UIViewController *owner) {
     static NSArray<NSString *> *names;
     static NSArray<NSString *> *keys;
+    static NSArray<Class> *classes;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         names = @[@"NewMainFrameViewController", @"ContactsViewController",
@@ -100,12 +104,31 @@ static NSString *WCKCornerPageKey(UIViewController *owner) {
         keys = @[@"mainFrameCornerEnabled", @"homepageCornerEnabled",
                  @"discoverPageCornerEnabled", @"myPageCornerEnabled",
                  @"friendProfileCornerEnabled", @"tpModeCornerEnabled"];
+        NSMutableArray<Class> *resolved = [NSMutableArray arrayWithCapacity:names.count];
+        for (NSString *name in names) {
+            Class cls = NSClassFromString(name);
+            [resolved addObject:cls ?: (Class)NSNull.class];
+        }
+        classes = resolved.copy;
     });
-    for (NSUInteger i = 0; i < names.count; ++i) {
-        Class cls = NSClassFromString(names[i]);
-        if (cls && [owner isKindOfClass:cls]) return keys[i];
+    for (NSUInteger i = 0; i < classes.count; ++i) {
+        Class cls = classes[i];
+        if (cls != (Class)NSNull.class && cls && [owner isKindOfClass:cls]) return keys[i];
     }
     return nil;
+}
+// Hot-path settings cache: the snapshot only changes with a settings write.
+typedef struct {
+    CGFloat radius, margin, spacing;
+    BOOL valid;
+} WCKCornerConfig;
+static WCKCornerConfig sCornerConfig;
+static void WCKCornerReloadConfig(void) {
+    NSDictionary *snapshot = WCKSettings.shared.snapshot;
+    sCornerConfig.radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
+    sCornerConfig.margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
+    sCornerConfig.spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
+    sCornerConfig.valid = YES;
 }
 static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot) {
     NSString *key = WCKCornerPageKey(owner);
@@ -392,13 +415,13 @@ static void WCKCornerVisitViews(void) {
 }
 
 static UIColor *WCKCornerDefaultFill(UITableView *table) {
-    // WCR look: a barely-there lift over the page, not a solid slab. A solid
-    // fill makes the corner read as a hard cut against the background.
+    // Neutral card tone; the old translucent white washed out to a light slab
+    // on dark pages once it stacked over a light cell background.
     BOOL dark = NO;
     @try { dark = table.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark; }
     @catch (__unused NSException *exception) { dark = NO; }
-    return dark ? [UIColor colorWithRed:1 green:1 blue:1 alpha:0.025]
-                : [UIColor colorWithRed:0 green:0 blue:0 alpha:0.02];
+    if (dark) return [UIColor colorWithRed:28 / 255.0 green:28 / 255.0 blue:30 / 255.0 alpha:1];
+    return [UIColor colorWithRed:252 / 255.0 green:252 / 255.0 blue:252 / 255.0 alpha:1];
 }
 // One instance so the restore check can recognise exactly what we assigned.
 static UIColor *WCKCornerTransparent(void) {
@@ -467,7 +490,8 @@ static CGRect WCKCornerTargetFrame(UITableViewCell *cell, CGRect incoming,
     UIViewController *owner = WCKCornerOwner(table);
     NSString *pageKey = WCKCornerPageKey(owner);
     if (!pageKey || ![snapshot[pageKey] boolValue]) return incoming;
-    CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
+    if (!sCornerConfig.valid) WCKCornerReloadConfig();
+    CGFloat margin = sCornerConfig.margin;
     margin = MIN(margin, MAX(0.0, incoming.size.width / 2.0 - 1.0));
     CGRect out = incoming;
     if (margin > 0 && out.size.width > 2.0 * margin) {
@@ -512,12 +536,20 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             BOOL first = path.row == 0;
             BOOL last = rows > 0 && path.row == rows - 1;
             CGRect bounds = cell.bounds;
-            CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
+            if (!sCornerConfig.valid) WCKCornerReloadConfig();
+            CGFloat radius = sCornerConfig.radius;
             radius = MIN(radius, MIN(bounds.size.width, bounds.size.height) / 2.0);
             UIRectCorner corners = 0;
             if (first) corners |= UIRectCornerTopLeft | UIRectCornerTopRight;
             if (last) corners |= UIRectCornerBottomLeft | UIRectCornerBottomRight;
             if (radius <= 0.5) corners = 0;
+            // Fast path: identical geometry already applied on this cell. Rows
+            // lay out many times per scroll; rebuilding the path each pass was
+            // the visible jank.
+            if (state.maskLayer && cell.layer.mask == state.maskLayer &&
+                CGRectEqualToRect(state.appliedBounds, bounds) &&
+                state.appliedRadius == radius && state.appliedCorners == corners)
+                return;
             // A shape-layer mask survives host writes to backgroundColor and
             // layer geometry, which is what kept dropping the corners on scroll.
             if (!state.maskLayer) {
@@ -534,6 +566,8 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
                 byRoundingCorners:corners cornerRadii:CGSizeMake(pathRadius, pathRadius)];
             maskLayer.path = cornerPath.CGPath;
             if (cell.layer.mask != maskLayer) cell.layer.mask = maskLayer;
+            state.appliedBounds = bounds; state.appliedRadius = radius;
+            state.appliedCorners = corners;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
             if (!state.ownsFill) {
                 state.hostFill = cell.backgroundColor;
@@ -718,6 +752,10 @@ void WCKInstallCorners(void) {
             ? @"ready" : @"列表或首页单元格布局/恢复接口不可用");
         [NSNotificationCenter.defaultCenter addObserverForName:WCKSettingsDidChangeNotification
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
-            usingBlock:^(__unused NSNotification *note) { WCKRefreshCorners(); }];
+            usingBlock:^(__unused NSNotification *note) {
+                WCKCornerReloadConfig();
+                WCKRefreshCorners();
+            }];
+        WCKCornerReloadConfig();
     });
 }
