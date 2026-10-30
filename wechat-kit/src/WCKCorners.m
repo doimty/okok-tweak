@@ -286,7 +286,8 @@ static void WCKCornerApplyToView(UIView *view) {
         for (UIView *child in view.subviews) {
             if ([child isKindOfClass:UITableViewCell.class]) continue;
             if (child.layer.cornerRadius > 0.01) continue; // host-owned
-            if ([child isKindOfClass:UITextField.class]) {
+            Class fieldClass = NSClassFromString(@"UITextField");
+            if (fieldClass && [child isKindOfClass:fieldClass]) {
                 // A search field paints its own background image; clipping the
                 // field is what actually makes the box round.
                 child.layer.cornerRadius = radius;
