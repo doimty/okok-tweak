@@ -382,7 +382,7 @@ static void geometry(void) {
     narrow.cell.frame=CGRectMake(40,100,20,60);
     CHECK_ID("geometry.narrow-card",narrow.cell.frame.size.width>=1 && narrow.cell.frame.size.height>0);
     layout(narrow);
-    CHECK_ID("geometry.narrow-radius",narrow.cell.layer.cornerRadius<=
+    CHECK_ID("geometry.narrow-radius",[UIBezierPath fixtureLastRadii].width<=
         MIN(narrow.cell.bounds.size.width,narrow.cell.bounds.size.height)/2.0+0.001);
 
     // Disabling restores both the frame and the layer.
