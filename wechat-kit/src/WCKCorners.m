@@ -106,7 +106,9 @@ static NSString *WCKCornerPageKey(UIViewController *owner) {
         return @"discoverPageCornerEnabled";
     if ([name containsString:@"MoreViewController"])
         return @"myPageCornerEnabled";
-    if ([name containsString:@"ContactInfo"] || [name containsString:@"ContactProfile"])
+    if ([name containsString:@"ContactInfo"] || [name containsString:@"ContactProfile"] ||
+        [name containsString:@"ChatInfo"] || [name containsString:@"ChatRoomInfo"] ||
+        [name containsString:@"SessionInfo"] || [name containsString:@"ChatDetail"])
         return @"friendProfileCornerEnabled";
     return nil;
 }
@@ -135,7 +137,9 @@ static NSString *WCKCornerTablePageKey(UITableView *table) {
     if ([name containsString:@"FindFriend"] || [name containsString:@"Discover"])
         return @"discoverPageCornerEnabled";
     if ([name containsString:@"More"]) return @"myPageCornerEnabled";
-    if ([name containsString:@"ContactInfo"] || [name containsString:@"Profile"])
+    if ([name containsString:@"ContactInfo"] || [name containsString:@"Profile"] ||
+        [name containsString:@"ChatInfo"] || [name containsString:@"ChatRoomInfo"] ||
+        [name containsString:@"SessionInfo"] || [name containsString:@"ChatDetail"])
         return @"friendProfileCornerEnabled";
     return nil;
 }
@@ -272,6 +276,31 @@ static void WCKCornerApplyToView(UIView *view) {
     view.layer.cornerCurve = kCACornerCurveContinuous;
     view.layer.masksToBounds = YES;
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Search bars, menus and system popups paint through an inner container, so
+    // the outer view's own layer is invisible. Round the painted child too.
+    if ([family isEqualToString:@"searchCorner"] || [family isEqualToString:@"menuCorner"] ||
+        [family isEqualToString:@"systemPopupCorner"]) {
+        for (UIView *child in view.subviews) {
+            if ([child isKindOfClass:UITableViewCell.class]) continue;
+            if (child.layer.cornerRadius > 0.01) continue; // host-owned
+            UIColor *colour = child.backgroundColor;
+            if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
+                child.layer.cornerRadius = radius;
+                child.layer.cornerCurve = kCACornerCurveContinuous;
+                child.layer.masksToBounds = YES;
+                continue;
+            }
+            for (UIView *inner in child.subviews) {
+                UIColor *innerColour = inner.backgroundColor;
+                if (inner.layer.cornerRadius > 0.01) continue;
+                if (innerColour && CGColorGetAlpha(innerColour.CGColor) > 0.01) {
+                    inner.layer.cornerRadius = radius;
+                    inner.layer.cornerCurve = kCACornerCurveContinuous;
+                    inner.layer.masksToBounds = YES;
+                }
+            }
+        }
+    }
 }
 static void WCKCornerViewDidMove(id view, SEL cmd) {
     sViewDidMoveToWindow(view, cmd);
