@@ -389,6 +389,13 @@ static UIColor *WCKCornerDefaultFill(UITableView *table) {
     if (dark) return [UIColor colorWithRed:44 / 255.0 green:44 / 255.0 blue:46 / 255.0 alpha:1];
     return UIColor.whiteColor;
 }
+// One instance so the restore check can recognise exactly what we assigned.
+static UIColor *WCKCornerTransparent(void) {
+    static UIColor *colour;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ colour = UIColor.clearColor; });
+    return colour;
+}
 static BOOL WCKCornerContext(UITableViewCell *cell, NSDictionary *snapshot,
                              UITableView **tableOut, NSIndexPath **pathOut, NSInteger *rowsOut) {
     if (!cell.window || cell.hidden || cell.alpha < 0.01) return NO;
@@ -531,10 +538,10 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             back.backgroundColor = fill;
             if (!state.ownsFill) {
                 state.hostFill = cell.backgroundColor;
-                state.appliedFill = UIColor.clearColor;
+                state.appliedFill = WCKCornerTransparent();
                 state.ownsFill = YES;
             }
-            cell.backgroundColor = UIColor.clearColor;
+            cell.backgroundColor = WCKCornerTransparent();
             UIView *selected = cell.selectedBackgroundView;
             if (selected) {
                 if (!state.ownsSelected) {
