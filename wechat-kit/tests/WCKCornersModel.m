@@ -334,10 +334,10 @@ static void geometry(void) {
 
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     layout(first);
-    expectCard(first,cardRect(first,24,8,YES,NO),top,12,"geometry.first");
     UIView *firstCard=first.cell.backgroundView;
     CHECK_ID("geometry.frame",firstCard!=nil &&
         sameRect(firstCard.frame,CGRectMake(24,4,372,56)));
+    expectCard(first,cardRect(first,24,8,YES,NO),top,12,"geometry.first");
 
     WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
     layout(middle);
