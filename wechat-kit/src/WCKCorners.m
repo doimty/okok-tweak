@@ -321,9 +321,6 @@ static void WCKCornerApplyToView(UIView *view) {
     view.layer.masksToBounds = YES;
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     WCKCornerRoundChildren(view, radius, family);
-            }
-        }
-    }
 }
 static void WCKCornerViewDidMove(id view, SEL cmd) {
     sViewDidMoveToWindow(view, cmd);
