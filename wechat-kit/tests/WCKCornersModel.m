@@ -451,16 +451,14 @@ static void refresh(void) {
     setting(@"globalCornerSpacing",@8);
     WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     layout(s);
-    expectCard(s,cardRect(s,24,8,YES,NO),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,12,"refresh.initial");
+    expectCard(s,cardRect(s,24,8,YES,YES),allCorners,12,"refresh.initial");
     NSUInteger needs=s.cell.fixtureNeedsLayoutCalls;
     setting(@"globalCornerRadius",@18);
     WCKRefreshCorners();
     drainRefresh();
     CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1);
     layout(s);
-    expectCard(s,cardRect(s,24,8,YES,NO),
-        kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner,18,"refresh.radius");
+    expectCard(s,cardRect(s,24,8,YES,YES),allCorners,18,"refresh.radius");
     setting(@"globalCornerRadius",@12);
     setting(@"corners",@NO);
     WCKRefreshCorners();
