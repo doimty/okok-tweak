@@ -498,8 +498,8 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
                 return;
             }
             NSDictionary *snapshot = WCKSettings.shared.snapshot;
-            UITableView *table = nil; NSIndexPath *path = nil; NSInteger rows = 0;
-            if (!WCKCornerContext(cell, snapshot, &table, &path, &rows) ||
+            UITableView *table = nil; NSIndexPath *path = nil;
+            if (!WCKCornerContext(cell, snapshot, &table, &path, NULL) ||
                 !WCKCornerFiniteRect(cell.bounds)) {
                 WCKCornerRestoreStyle(cell, state);
                 WCKCornerDetachCard(cell, state);
@@ -513,19 +513,16 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             CGFloat margin = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerMargin", 8, 30);
             CGFloat spacing = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerSpacing", 8, 50);
             margin = MIN(margin, MAX(0.0, bounds.size.width / 2.0 - 1.0));
-            // One card per section: only the first and last rows are rounded,
-            // and the group keeps half the spacing above and below it.
-            BOOL first = path.row == 0, last = path.row == rows - 1;
-            CGFloat top = first ? spacing / 2.0 : 0.0;
-            CGFloat bottom = last ? spacing / 2.0 : 0.0;
-            CGRect card = CGRectMake(margin, top, bounds.size.width - 2.0 * margin,
-                                     bounds.size.height - top - bottom);
+            // Every row is its own card; the gap is split above and below so rows
+            // never touch. Only the background view is inset - content never moves.
+            CGFloat vertical = MIN(spacing, MAX(0.0, bounds.size.height - 2.0)) / 2.0;
+            CGRect card = CGRectMake(margin, vertical, bounds.size.width - 2.0 * margin,
+                                     bounds.size.height - 2.0 * vertical);
             if (!WCKCornerFiniteRect(card)) return;
             CGFloat radius = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerRadius", 12, 24);
             radius = MIN(radius, MIN(card.size.width, card.size.height) / 2.0);
-            CACornerMask mask = 0;
-            if (first) mask |= kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
-            if (last) mask |= kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
+            CACornerMask mask = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner |
+                kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
             if (radius <= 0.5) mask = 0;
             CGFloat width = (CGFloat)WCKCornerNumber(snapshot, @"globalCornerStroke", 0, 4);
             UIColor *border = WCKCornerFill(snapshot, @"globalCornerStrokeColor");

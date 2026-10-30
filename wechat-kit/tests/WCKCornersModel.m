@@ -329,31 +329,37 @@ static void geometry(void) {
     setting(@"globalCornerSpacing",@8);
     setting(@"globalCornerRadius",@12);
 
-    CACornerMask top=kCALayerMinXMinYCorner|kCALayerMaxXMinYCorner;
-    CACornerMask bottom=kCALayerMinXMaxYCorner|kCALayerMaxXMaxYCorner;
-
     WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
     layout(first);
     UIView *firstCard=first.cell.backgroundView;
     CHECK_ID("geometry.frame",firstCard!=nil &&
-        sameRect(firstCard.frame,CGRectMake(24,4,372,56)));
-    expectCard(first,cardRect(first,24,8,YES,NO),top,12,"geometry.first");
+        sameRect(firstCard.frame,CGRectMake(24,4,372,52)));
+    expectCard(first,cardRect(first,24,8,YES,YES),allCorners,12,"geometry.first");
 
+    // Every row is an independent card, whatever its position in the section.
     WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
     layout(middle);
-    expectCard(middle,cardRect(middle,24,8,NO,NO),0,12,"geometry.middle");
+    expectCard(middle,cardRect(middle,24,8,YES,YES),allCorners,12,"geometry.middle");
 
     WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
     layout(last);
-    expectCard(last,cardRect(last,24,8,NO,YES),bottom,12,"geometry.last");
+    expectCard(last,cardRect(last,24,8,YES,YES),allCorners,12,"geometry.last");
 
     WCKCornerScene *single=sceneWithRows(ContactsViewController.class,0,0,1);
     layout(single);
     expectCard(single,cardRect(single,24,8,YES,YES),allCorners,12,"geometry.single");
 
+    // Spacing is a real per-row gap, so the slider keeps working row to row.
+    setting(@"globalCornerSpacing",@0);
+    layout(first);
+    expectCard(first,CGRectMake(24,0,372,60),allCorners,12,"geometry.spacing-zero");
+    setting(@"globalCornerSpacing",@8);
+    layout(first);
+    expectCard(first,CGRectMake(24,4,372,52),allCorners,12,"geometry.spacing-back");
+
     // Repeated layouts must stay idempotent: no growing insets, no double frames.
     for (unsigned i=0;i<20;++i) { layout(first); }
-    expectCard(first,CGRectMake(24,4,372,56),top,12,"geometry.stable");
+    expectCard(first,CGRectMake(24,4,372,52),allCorners,12,"geometry.stable");
 
     // Narrow hosts clamp the margin instead of producing a negative card.
     WCKCornerScene *narrow=sceneWithRows(NewMainFrameViewController.class,0,1,3);

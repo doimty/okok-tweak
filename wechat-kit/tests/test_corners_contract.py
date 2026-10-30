@@ -70,7 +70,7 @@ class CornersContract(unittest.TestCase):
         self.assertNotIn('cell.frame =', source)
         self.assertIn('WCKCornerCardView(cell, state)', layout)
         self.assertIn('back.frame = card;', layout)
-        self.assertIn('CGRectMake(margin, top, bounds.size.width - 2.0 * margin', layout)
+        self.assertIn('CGRectMake(margin, vertical, bounds.size.width - 2.0 * margin', layout)
         card = body('WCKCornerCardView')
         self.assertIn('cell.backgroundView', card)
         self.assertIn('state.createdBackground = YES', card)
@@ -79,16 +79,17 @@ class CornersContract(unittest.TestCase):
                        'geometry.first', 'geometry.single']:
             self.assertIn(marker, model)
 
-    def test_group_masks_follow_section_position(self):
+    def test_every_row_is_its_own_inset_card(self):
         layout = body('WCKCornerLayout')
-        self.assertIn('path.row == 0', layout)
-        self.assertIn('path.row == rows - 1', layout)
+        # Per-row cards: no first/last special-casing, spacing stays a real gap.
+        self.assertNotIn('path.row == 0', layout)
+        self.assertNotIn('path.row == rows - 1', layout)
         self.assertIn('kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner', layout)
         self.assertIn('kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner', layout)
-        # Vertical spacing is half above the first row and half below the last.
-        self.assertIn('first ? spacing / 2.0 : 0.0', layout)
-        self.assertIn('last ? spacing / 2.0 : 0.0', layout)
-        for marker in ['geometry.first', 'geometry.middle', 'geometry.last', 'geometry.single']:
+        self.assertIn('CGFloat vertical = MIN(spacing', layout)
+        self.assertIn('bounds.size.height - 2.0 * vertical', layout)
+        for marker in ['geometry.first', 'geometry.middle', 'geometry.last', 'geometry.single',
+                       'geometry.spacing-zero', 'geometry.spacing-back']:
             self.assertIn(marker, model)
 
     def test_disable_and_reuse_restore_only_owned_values(self):
