@@ -128,6 +128,26 @@ static BOOL WCKCornerPageEnabled(UIViewController *owner, NSDictionary *snapshot
     if (!key) return NO;
     return [snapshot[key] boolValue];
 }
+// Some builds place the list inside a container controller, so the responder
+// chain never reaches the page controller. The table's own class is a stable
+// second signal (e.g. MainFrameTableView is the home chat list).
+static NSString *WCKCornerTablePageKey(UITableView *table) {
+    if (!table) return nil;
+    NSString *name = NSStringFromClass(table.class);
+    if (!name.length) return nil;
+    if ([name containsString:@"MainFrame"]) return @"mainFrameCornerEnabled";
+    if ([name containsString:@"Contacts"]) return @"homepageCornerEnabled";
+    if ([name containsString:@"FindFriend"] || [name containsString:@"Discover"])
+        return @"discoverPageCornerEnabled";
+    if ([name containsString:@"More"]) return @"myPageCornerEnabled";
+    if ([name containsString:@"ContactInfo"] || [name containsString:@"Profile"])
+        return @"friendProfileCornerEnabled";
+    return nil;
+}
+static NSString *WCKCornerPageKeyForTable(UIViewController *owner, UITableView *table) {
+    NSString *key = WCKCornerPageKey(owner);
+    return key ?: WCKCornerTablePageKey(table);
+}
 // ---- generic view corners: menus, search fields and other painted containers
 
 // No host ABI or class-name binding is enforced; exact family switches still
@@ -427,7 +447,8 @@ static BOOL WCKCornerContext(UITableViewCell *cell, NSDictionary *snapshot,
                              UITableView **tableOut, NSIndexPath **pathOut, NSInteger *rowsOut) {
     if (!cell.window || cell.hidden || cell.alpha < 0.01) return NO;
     UITableView *table = WCKCornerTable(cell);
-    if (!table || !WCKCornerPageEnabled(WCKCornerOwner(table), snapshot)) return NO;
+    NSString *pageKey = WCKCornerPageKeyForTable(WCKCornerOwner(table), table);
+    if (!table || !pageKey || ![snapshot[pageKey] boolValue]) return NO;
     NSIndexPath *path = [table indexPathForCell:cell];
     if (!path || path.section < 0 || path.section >= [table numberOfSections]) return NO;
     NSInteger rows = [table numberOfRowsInSection:path.section];
@@ -481,7 +502,7 @@ static CGRect WCKCornerTargetFrame(UITableViewCell *cell, CGRect incoming,
     UITableView *table = WCKCornerTable(cell);
     if (!table) return incoming;
     UIViewController *owner = WCKCornerOwner(table);
-    NSString *pageKey = WCKCornerPageKey(owner);
+    NSString *pageKey = WCKCornerPageKeyForTable(owner, table);
     if (!pageKey || ![snapshot[pageKey] boolValue]) return incoming;
     if (!sCornerConfig.valid) WCKCornerReloadConfig();
     CGFloat margin = sCornerConfig.margin;
@@ -539,9 +560,14 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             // Fast path: identical geometry already applied on this cell. Rows
             // lay out many times per scroll; rebuilding the path each pass was
             // the visible jank.
+            BOOL fillIntact = state.ownsFill &&
+                WCKCornerObjectsEqual(cell.backgroundColor, state.appliedFill);
+            BOOL contentIntact = state.ownsContentFill &&
+                WCKCornerObjectsEqual(cell.contentView.backgroundColor, state.appliedContentFill);
             if (state.maskLayer && cell.layer.mask == state.maskLayer &&
                 CGRectEqualToRect(state.appliedBounds, bounds) &&
-                state.appliedRadius == radius && state.appliedCorners == corners)
+                state.appliedRadius == radius && state.appliedCorners == corners &&
+                fillIntact && contentIntact)
                 return;
             // A shape-layer mask survives host writes to backgroundColor and
             // layer geometry, which is what kept dropping the corners on scroll.
