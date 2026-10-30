@@ -353,7 +353,7 @@ static void geometry(void) {
     WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
     setFrameExpect(middle,host,insetFrame(host,24,0,0),"geometry.middle-frame");
     layout(middle);
-    expectStyle(middle,12,0,"geometry.middle-style");
+    expectStyle(middle,0,0,"geometry.middle-style");
 
     WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
     setFrameExpect(last,host,insetFrame(host,24,0,0),"geometry.last-frame");

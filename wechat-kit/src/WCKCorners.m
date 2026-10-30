@@ -534,13 +534,12 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
             }
             CAShapeLayer *maskLayer = state.maskLayer;
             maskLayer.frame = bounds;
-            if (corners == 0) {
-                maskLayer.path = NULL;
-            } else {
-                UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bounds
-                    byRoundingCorners:corners cornerRadii:CGSizeMake(radius, radius)];
-                maskLayer.path = path.CGPath;
-            }
+            // A nil path would mask the whole row away; middle rows keep a plain
+            // rectangular path so the card stays continuous.
+            CGFloat pathRadius = (corners == 0) ? 0 : radius;
+            UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bounds
+                byRoundingCorners:corners cornerRadii:CGSizeMake(pathRadius, pathRadius)];
+            maskLayer.path = path.CGPath;
             if (cell.layer.mask != maskLayer) cell.layer.mask = maskLayer;
             UIColor *fill = WCKCornerFill(snapshot, @"globalCornerFill") ?: WCKCornerDefaultFill(table);
             if (!state.ownsFill) {
