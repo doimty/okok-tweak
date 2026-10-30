@@ -58,6 +58,7 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @end
 @implementation CALayer
 - (instancetype)init { if ((self=[super init])) { _maskedCorners=allCorners; _cornerCurve=@"host"; } return self; }
++ (instancetype)layer { return [self new]; }
 - (CGColorRef)borderColor { return _fixtureBorderColor; }
 - (void)setBorderColor:(CGColorRef)c {
     if (c) CGColorRetain(c); if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); _fixtureBorderColor=c;
@@ -65,6 +66,7 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 - (void)dealloc { if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); }
 @end
 @implementation CAShapeLayer @end
+@implementation CALayer (FixtureLayerFactory) @end
 static UIRectCorner sFixtureCorners;
 static CGSize sFixtureRadii;
 @implementation UIBezierPath

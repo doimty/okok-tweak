@@ -56,6 +56,7 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @property(nonatomic) BOOL masksToBounds;
 @property(nonatomic) CGRect frame;
 @property(nonatomic, strong) CALayer *mask;
++ (instancetype)layer;
 @end
 @interface CAShapeLayer : CALayer
 @property(nonatomic) CGPathRef path;
