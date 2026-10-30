@@ -455,39 +455,6 @@ static void WCKCornerRestoreStyle(UITableViewCell *cell, WCKCornerState *state) 
     state.ownsSelected = NO; state.hostSelectedFrame = CGRectZero;
     state.ownsContentFill = NO; state.hostContentFill = nil; state.appliedContentFill = nil;
 }
-static void WCKCornerStyleLayer(CALayer *layer, CGFloat radius, NSUInteger mask,
-                                 CGFloat width, UIColor *border, WCKCornerState *state) {
-    if (!layer) return;
-    for (WCKCornerLayerState *record in state.layers) {
-        if (record.layer != layer) continue;
-        // Already ours: update in place instead of stripping and re-applying,
-        // so a scroll pass never shows an un-rounded cell.
-        record.lastRadius = radius; record.lastMask = mask;
-        record.lastCurve = kCACornerCurveContinuous;
-        layer.cornerRadius = radius; layer.maskedCorners = mask;
-        layer.cornerCurve = kCACornerCurveContinuous;
-        if (width > 0 && border) {
-            record.lastWidth = width; record.lastColor = border; record.ownsBorder = YES;
-            layer.borderWidth = width; layer.borderColor = border.CGColor;
-        }
-        return;
-    }
-    WCKCornerLayerState *saved = [WCKCornerLayerState new]; saved.layer = layer;
-    saved.radius = layer.cornerRadius; saved.mask = layer.maskedCorners; saved.curve = layer.cornerCurve;
-    saved.lastRadius = radius; saved.lastMask = mask; saved.lastCurve = kCACornerCurveContinuous;
-    saved.ownsGeometry = YES;
-    saved.hostClips = layer.masksToBounds; saved.lastClips = YES; saved.ownsClips = YES;
-    layer.cornerRadius = radius; layer.maskedCorners = mask; layer.cornerCurve = kCACornerCurveContinuous;
-    // Clipping the row is what makes the corner read as the row's own shape.
-    layer.masksToBounds = YES;
-    if (width > 0 && border) {
-        saved.width = layer.borderWidth;
-        saved.color = layer.borderColor ? [UIColor colorWithCGColor:layer.borderColor] : nil;
-        saved.lastWidth = width; saved.lastColor = border; saved.ownsBorder = YES;
-        layer.borderWidth = width; layer.borderColor = border.CGColor;
-    }
-    [state.layers addObject:saved];
-}
 // 德发-style geometry: the row is inset when the host hands the frame to
 // UIKit, so hit testing, content layout and animation all use the card size.
 // Deliberately avoids indexPath/numberOfRowsInSection here: asking the table for

@@ -105,12 +105,12 @@ class CornersContract(unittest.TestCase):
         for marker in ['restore.host-values', 'reuse.host-style', 'reuse.reapplied']:
             self.assertIn(marker, model)
 
-    def test_host_clipping_is_restored_not_leaked(self):
-        style = body('WCKCornerStyleLayer')
-        self.assertIn('saved.hostClips = layer.masksToBounds', style)
-        self.assertIn('saved.lastClips = YES', style)
+    def test_mask_is_restored_not_leaked(self):
+        # The row mask is the only clipping mechanism; it must be handed back.
         restore = body('WCKCornerRestoreStyle')
-        self.assertIn('layer.masksToBounds = saved.hostClips', restore)
+        self.assertIn('if (state.ownsMask && cell.layer.mask == state.maskLayer)', restore)
+        self.assertIn('cell.layer.mask = state.hostMask', restore)
+        self.assertIn('cell.layer.mask = maskLayer', body('WCKCornerLayout'))
         self.assertIn('geometry.disabled-style', model)
 
     def test_per_cell_reentrancy_guard(self):
