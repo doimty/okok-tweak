@@ -248,43 +248,89 @@ static void WCKCornerClearView(UIView *view) {
         view.layer.cornerCurve = saved[@"hostCurve"];
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
+static char sCornerChildMarkerKey;
+static char sCornerChildListKey;
+static BOOL WCKCornerNameMatches(id view, NSString *fragment) {
+    return [NSStringFromClass([view class]) containsString:fragment] ||
+        [NSStringFromClass([[view class] superclass]) containsString:fragment];
+}
+static void WCKCornerRestoreChild(UIView *child) {
+    NSDictionary *host = objc_getAssociatedObject(child, &sCornerChildMarkerKey);
+    if (![host isKindOfClass:NSDictionary.class]) return;
+    if (child.layer.cornerRadius == [host[@"appliedRadius"] doubleValue])
+        child.layer.cornerRadius = [host[@"radius"] doubleValue];
+    if (child.layer.masksToBounds == [host[@"appliedMasks"] boolValue])
+        child.layer.masksToBounds = [host[@"masks"] boolValue];
+    objc_setAssociatedObject(child, &sCornerChildMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void WCKCornerRestoreChildTree(UIView *view) {
+    NSArray<UIView *> *touched = objc_getAssociatedObject(view, &sCornerChildListKey);
+    if (![touched isKindOfClass:NSArray.class]) return;
+    for (UIView *child in touched) WCKCornerRestoreChild(child);
+    objc_setAssociatedObject(view, &sCornerChildListKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void WCKCornerRoundOneChild(UIView *child, CGFloat radius, BOOL force) {
+    if (!child || [child isKindOfClass:UITableViewCell.class]) return;
+    if (!force && child.layer.cornerRadius > 0.01) return;
+    if (!objc_getAssociatedObject(child, &sCornerChildMarkerKey))
+        objc_setAssociatedObject(child, &sCornerChildMarkerKey, @{
+            @"radius": @(child.layer.cornerRadius),
+            @"masks": @(child.layer.masksToBounds),
+            @"appliedRadius": @(radius),
+            @"appliedMasks": @YES
+        }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    CGFloat limit = MIN(child.bounds.size.width, child.bounds.size.height) / 2.0;
+    CGFloat corner = MIN(radius, limit);
+    if (corner <= 0.5) return;
+    child.layer.cornerRadius = corner;
+    child.layer.cornerCurve = kCACornerCurveContinuous;
+    child.layer.masksToBounds = YES;
+}
 static void WCKCornerRoundChildren(UIView *view, CGFloat radius, NSString *family) {
     if (![family isEqualToString:@"searchCorner"] && ![family isEqualToString:@"menuCorner"] &&
         ![family isEqualToString:@"systemPopupCorner"]) return;
-    Class fieldClass = NSClassFromString(@"UITextField");
-    for (UIView *child in view.subviews) {
-        if ([child isKindOfClass:UITableViewCell.class]) continue;
-        if (child.layer.cornerRadius > 0.01) continue; // host-owned
-        if (fieldClass && [child isKindOfClass:fieldClass]) {
-            child.layer.cornerRadius = radius;
-            child.layer.cornerCurve = kCACornerCurveContinuous;
-            child.layer.masksToBounds = YES;
-            continue;
-        }
-        UIColor *colour = child.backgroundColor;
-        if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
-            child.layer.cornerRadius = radius;
-            child.layer.cornerCurve = kCACornerCurveContinuous;
-            child.layer.masksToBounds = YES;
-            continue;
-        }
-        for (UIView *inner in child.subviews) {
-            if (inner.layer.cornerRadius > 0.01) continue;
-            UIColor *innerColour = inner.backgroundColor;
-            if (innerColour && CGColorGetAlpha(innerColour.CGColor) > 0.01) {
-                inner.layer.cornerRadius = radius;
-                inner.layer.cornerCurve = kCACornerCurveContinuous;
-                inner.layer.masksToBounds = YES;
+    // Real 8.0.79 layout: UISearchBar > UIView > _UISearchBarSearchContainerView >
+    // UISearchBarTextField, plus WCSearchBar and UISearchBarBackground siblings.
+    // The visible shape is 3 levels down, so walk a bounded tree instead of one level.
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:view];
+    NSMutableArray<UIView *> *touched = [NSMutableArray array];
+    NSUInteger visited = 0;
+    while (queue.count && visited < 120) {
+        UIView *node = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        ++visited;
+        for (UIView *child in node.subviews) {
+            if (child == view) continue;
+            [queue addObject:child];
+            BOOL field = WCKCornerNameMatches(child, @"TextField") ||
+                WCKCornerNameMatches(child, @"SearchBarBackground") ||
+                WCKCornerNameMatches(child, @"SearchContainer") ||
+                WCKCornerNameMatches(child, @"SearchTextView");
+            if (field) {
+                WCKCornerRoundOneChild(child, radius, YES);
+                [touched addObject:child];
+                continue;
+            }
+            UIColor *colour = child.backgroundColor;
+            if (colour && CGColorGetAlpha(colour.CGColor) > 0.01) {
+                WCKCornerRoundOneChild(child, radius, !(child.layer.cornerRadius > 0.01));
+                [touched addObject:child];
             }
         }
     }
+    if (touched.count)
+        objc_setAssociatedObject(view, &sCornerChildListKey, touched, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WCKCornerApplyToView(UIView *view) {
     if (!NSThread.isMainThread || ![view isKindOfClass:UIView.class]) return;
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
     if (!WCKEnabled(@"corners") || WCKCornerViewExcluded(view) ||
         [view isKindOfClass:UITableViewCell.class] || [view isKindOfClass:UICollectionViewCell.class] ||
-        view.window == nil || view.hidden || view.alpha < 0.01) { WCKCornerClearView(view); return; }
+        view.window == nil || view.hidden || view.alpha < 0.01) {
+        WCKCornerClearView(view);
+        WCKCornerRestoreChildTree(view);
+        return;
+    }
     NSString *family = WCKCornerFamilyForView(view);
     BOOL enabled = [snapshot[[family stringByAppendingString:@"Enabled"]] boolValue];
     NSMutableDictionary *saved = [objc_getAssociatedObject(view, &sCornerViewMarkerKey) mutableCopy];
