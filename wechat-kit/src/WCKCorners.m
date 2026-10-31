@@ -41,6 +41,7 @@ static BOOL sCornerRefreshQueued;
 @property(nonatomic) CGFloat fixedSelectedRadius;
 @property(nonatomic) CACornerMask fixedSelectedMask;
 @property(nonatomic, weak) UIView *fixedSelectedView;
+@property(nonatomic) BOOL skipInset;
 @property(nonatomic) CGRect appliedBounds;
 @property(nonatomic) CGRect appliedFrame;
 @property(nonatomic) CGFloat appliedRadius;
@@ -261,6 +262,8 @@ static void WCKCornerRestoreChild(UIView *child) {
         child.layer.cornerRadius = [host[@"radius"] doubleValue];
     if (child.layer.masksToBounds == [host[@"appliedMasks"] boolValue])
         child.layer.masksToBounds = [host[@"masks"] boolValue];
+    if (WCKCornerObjectsEqual(child.layer.cornerCurve, host[@"appliedCurve"]))
+        child.layer.cornerCurve = host[@"curve"];
     objc_setAssociatedObject(child, &sCornerChildMarkerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WCKCornerRestoreChildTree(UIView *view) {
@@ -271,20 +274,43 @@ static void WCKCornerRestoreChildTree(UIView *view) {
 }
 static void WCKCornerRoundOneChild(UIView *child, CGFloat radius, BOOL force) {
     if (!child || [child isKindOfClass:UITableViewCell.class]) return;
-    if (!force && child.layer.cornerRadius > 0.01) return;
-    if (!objc_getAssociatedObject(child, &sCornerChildMarkerKey))
-        objc_setAssociatedObject(child, &sCornerChildMarkerKey, @{
-            @"radius": @(child.layer.cornerRadius),
-            @"masks": @(child.layer.masksToBounds),
-            @"appliedRadius": @(radius),
-            @"appliedMasks": @YES
-        }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Never fight the generic view path for the same view.
+    if (objc_getAssociatedObject(child, &sCornerViewMarkerKey)) return;
     CGFloat limit = MIN(child.bounds.size.width, child.bounds.size.height) / 2.0;
     CGFloat corner = MIN(radius, limit);
     if (corner <= 0.5) return;
-    child.layer.cornerRadius = corner;
-    child.layer.cornerCurve = kCACornerCurveContinuous;
-    child.layer.masksToBounds = YES;
+    NSDictionary *host = objc_getAssociatedObject(child, &sCornerChildMarkerKey);
+    if (host) {
+        // Host changed the layer after our pass: adopt its new value as the baseline.
+        if (child.layer.cornerRadius != [host[@"appliedRadius"] doubleValue] &&
+            child.layer.cornerRadius > 0.01) {
+            host = @{ @"radius": @(child.layer.cornerRadius),
+                      @"masks": @(child.layer.masksToBounds),
+                      @"curve": child.layer.cornerCurve ?: @"",
+                      @"appliedRadius": @(corner),
+                      @"appliedMasks": @YES,
+                      @"appliedCurve": kCACornerCurveContinuous };
+            objc_setAssociatedObject(child, &sCornerChildMarkerKey, host, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        } else if ([host[@"appliedRadius"] doubleValue] != corner) {
+            NSMutableDictionary *updated = host.mutableCopy;
+            updated[@"appliedRadius"] = @(corner);
+            objc_setAssociatedObject(child, &sCornerChildMarkerKey, updated, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    } else {
+        if (!force && child.layer.cornerRadius > 0.01) return;
+        objc_setAssociatedObject(child, &sCornerChildMarkerKey, @{
+            @"radius": @(child.layer.cornerRadius),
+            @"masks": @(child.layer.masksToBounds),
+            @"curve": child.layer.cornerCurve ?: @"",
+            @"appliedRadius": @(corner),
+            @"appliedMasks": @YES,
+            @"appliedCurve": kCACornerCurveContinuous
+        }, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (child.layer.cornerRadius != corner) child.layer.cornerRadius = corner;
+    if (child.layer.masksToBounds != YES) child.layer.masksToBounds = YES;
+    if (!WCKCornerObjectsEqual(child.layer.cornerCurve, kCACornerCurveContinuous))
+        child.layer.cornerCurve = kCACornerCurveContinuous;
 }
 static void WCKCornerRoundChildren(UIView *view, CGFloat radius, NSString *family) {
     if (![family isEqualToString:@"searchCorner"] && ![family isEqualToString:@"menuCorner"] &&
@@ -321,6 +347,33 @@ static void WCKCornerRoundChildren(UIView *view, CGFloat radius, NSString *famil
     if (touched.count)
         objc_setAssociatedObject(view, &sCornerChildListKey, touched, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
+// Bars keep their background image and blur layers at a different native radius,
+// which leaves square image corners outside the bar's rounded shape.
+static void WCKCornerSyncBarLayers(UIView *bar, CGFloat radius) {
+    NSMutableArray<UIView *> *touched = [NSMutableArray array];
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:bar];
+    NSUInteger visited = 0;
+    while (queue.count && visited < 40) {
+        UIView *node = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        ++visited;
+        NSString *parentName = NSStringFromClass(node.class);
+        for (UIView *child in node.subviews) {
+            [queue addObject:child];
+            NSString *name = NSStringFromClass(child.class);
+            BOOL hit = [name containsString:@"_UIBarBackground"] ||
+                [name containsString:@"_UIVisualEffectSubview"] ||
+                [name containsString:@"_UIVisualEffectContentView"] ||
+                [name containsString:@"BarBackgroundShadow"] ||
+                ([name containsString:@"ImageView"] && [parentName containsString:@"_UIBarBackground"]);
+            if (!hit) continue;
+            WCKCornerRoundOneChild(child, radius, YES);
+            [touched addObject:child];
+        }
+    }
+    if (touched.count)
+        objc_setAssociatedObject(bar, &sCornerChildListKey, touched, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 static void WCKCornerApplyToView(UIView *view) {
     if (!NSThread.isMainThread || ![view isKindOfClass:UIView.class]) return;
     NSDictionary *snapshot = WCKSettings.shared.snapshot;
@@ -349,6 +402,8 @@ static void WCKCornerApplyToView(UIView *view) {
             CGFloat childRadius = (CGFloat)WCKCornerNumber(snapshot,
                 [family stringByAppendingString:@"Radius"], [snapshot[@"globalCornerRadius"] doubleValue], 24);
             WCKCornerRoundChildren(view, childRadius, family);
+        } else {
+            WCKCornerRestoreChildTree(view);
         }
         return;
     }
@@ -367,6 +422,9 @@ static void WCKCornerApplyToView(UIView *view) {
     view.layer.cornerCurve = kCACornerCurveContinuous;
     view.layer.masksToBounds = YES;
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if ([family isEqualToString:@"topbarCorner"] || [family isEqualToString:@"toolbarCorner"] ||
+        [view isKindOfClass:UINavigationBar.class] || [view isKindOfClass:UITabBar.class])
+        WCKCornerSyncBarLayers(view, radius);
     WCKCornerRoundChildren(view, radius, family);
 }
 static void WCKCornerViewDidMove(id view, SEL cmd) {
@@ -608,6 +666,7 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
         @try {
             if (WCKEnabled(@"corners")) {
                 WCKCornerState *state = WCKCornerGetState(cell, NO);
+                if (state.skipInset) { original(cell, cmd, frame); return; }
                 // The host can hand back the frame it just received. Insetting
                 // again would walk the row left and clip its leading icon.
                 if (state && CGRectEqualToRect(state.appliedFrame, frame)) {
@@ -756,6 +815,24 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
                     state.fixedSelectedView = selected;
                     state.hostSelectedFrame = selected.frame;
                     state.ownsSelected = YES;
+                }
+            }
+            // Some host rows compute their label width from the cell width and
+            // wrap when the row is inset (the Me-page settings row does this).
+            // Detect that pattern once and keep such rows full width.
+            if (!state.skipInset && table && cell.frame.size.width + 0.5 < table.bounds.size.width) {
+                for (UIView *sub in cell.contentView.subviews) {
+                    if (![sub respondsToSelector:@selector(numberOfLines)]) continue;
+                    NSInteger lines = [(UILabel *)sub numberOfLines];
+                    if (lines > 1 && sub.frame.size.width < 9) {
+                        state.skipInset = YES;
+                        CGRect full = cell.frame;
+                        full.origin.x = 0;
+                        full.size.width = table.bounds.size.width;
+                        cell.frame = full;
+                        state.appliedFrame = full;
+                        break;
+                    }
                 }
             }
             WCKCornerNote(NSStringFromClass(cell.class), table, @"styled", NO);
