@@ -422,8 +422,11 @@ static void WCKCornerApplyToView(UIView *view) {
     view.layer.cornerCurve = kCACornerCurveContinuous;
     view.layer.masksToBounds = YES;
     objc_setAssociatedObject(view, &sCornerViewMarkerKey, saved, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    Class navBarClass = NSClassFromString(@"UINavigationBar");
+    Class tabBarClass = NSClassFromString(@"UITabBar");
     if ([family isEqualToString:@"topbarCorner"] || [family isEqualToString:@"toolbarCorner"] ||
-        [view isKindOfClass:UINavigationBar.class] || [view isKindOfClass:UITabBar.class])
+        (navBarClass && [view isKindOfClass:navBarClass]) ||
+        (tabBarClass && [view isKindOfClass:tabBarClass]))
         WCKCornerSyncBarLayers(view, radius);
     WCKCornerRoundChildren(view, radius, family);
 }
@@ -823,7 +826,7 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             if (!state.skipInset && table && cell.frame.size.width + 0.5 < table.bounds.size.width) {
                 for (UIView *sub in cell.contentView.subviews) {
                     if (![sub respondsToSelector:@selector(numberOfLines)]) continue;
-                    NSInteger lines = [(UILabel *)sub numberOfLines];
+                    NSInteger lines = (NSInteger)[(id)sub numberOfLines];
                     if (lines > 1 && sub.frame.size.width < 9) {
                         state.skipInset = YES;
                         CGRect full = cell.frame;
