@@ -677,7 +677,6 @@ static void WCKCornerSetFrame(UITableViewCell *cell, SEL cmd, CGRect frame, WCKC
         @try {
             if (WCKEnabled(@"corners")) {
                 WCKCornerState *state = WCKCornerGetState(cell, NO);
-                if (state.skipInset) { original(cell, cmd, frame); return; }
                 // The host can hand back the frame it just received. Insetting
                 // again would walk the row left and clip its leading icon.
                 if (state && CGRectEqualToRect(state.appliedFrame, frame)) {
@@ -826,24 +825,6 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
                     state.fixedSelectedView = selected;
                     state.hostSelectedFrame = selected.frame;
                     state.ownsSelected = YES;
-                }
-            }
-            // Some host rows compute their label width from the cell width and
-            // wrap when the row is inset (the Me-page settings row does this).
-            // Detect that pattern once and keep such rows full width.
-            if (!state.skipInset && table && cell.frame.size.width + 0.5 < table.bounds.size.width) {
-                for (UIView *sub in cell.contentView.subviews) {
-                    if (![sub respondsToSelector:@selector(numberOfLines)]) continue;
-                    NSInteger lines = [(WCKCornerLabelProbe *)sub numberOfLines];
-                    if (lines > 1 && sub.frame.size.width < 9) {
-                        state.skipInset = YES;
-                        CGRect full = cell.frame;
-                        full.origin.x = 0;
-                        full.size.width = table.bounds.size.width;
-                        cell.frame = full;
-                        state.appliedFrame = full;
-                        break;
-                    }
                 }
             }
             WCKCornerNote(NSStringFromClass(cell.class), table, @"styled", NO);
