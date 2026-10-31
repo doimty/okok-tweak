@@ -10,7 +10,9 @@
 @interface WCKCornerLabelProbe : NSObject
 - (NSInteger)numberOfLines;
 @end
-@implementation WCKCornerLabelProbe @end
+@implementation WCKCornerLabelProbe
+- (NSInteger)numberOfLines { return 0; }
+@end
 
 static char sCornerStateKey;
 static NSHashTable<UITableViewCell *> *sCornerCells; // weak, main-thread only
