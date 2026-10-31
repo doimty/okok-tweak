@@ -32,6 +32,18 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 + (instancetype)blackColor;
 @end
 
+typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
+    UIRectCornerTopLeft = 1U << 0, UIRectCornerTopRight = 1U << 1,
+    UIRectCornerBottomLeft = 1U << 2, UIRectCornerBottomRight = 1U << 3,
+    UIRectCornerAllCorners = ~0UL
+};
+@interface UIBezierPath : NSObject
++ (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
+                             cornerRadii:(CGSize)radii;
+@property(nonatomic, readonly) CGPathRef CGPath;
++ (NSArray *)fixtureInfoForPath:(CGPathRef)path;
+@end
+
 @interface CALayer : NSObject {
     CGColorRef _fixtureBorderColor;
 }
@@ -41,6 +53,12 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @property(nonatomic) CGFloat borderWidth;
 @property(nonatomic) CGColorRef borderColor;
 @property(nonatomic) BOOL masksToBounds;
+@property(nonatomic) CGRect frame;
+@property(nonatomic, strong) CALayer *mask;
++ (instancetype)layer;
+@end
+@interface CAShapeLayer : CALayer
+@property(nonatomic) CGPathRef path;
 @end
 
 @class UIView, UIWindow, UITableViewCell;
@@ -118,7 +136,8 @@ typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
 @property(nonatomic, strong) UIView *view;
 @end
 @interface MMTableViewCell : UITableViewCell @end
-@interface MMMultiMenuTableViewCell : UITableViewCell @end
+@interface MMBaseMultiMenuTableViewCell : MMTableViewCell @end
+@interface MMMultiMenuTableViewCell : MMBaseMultiMenuTableViewCell @end
 @interface NewMainFrameCell : MMMultiMenuTableViewCell @end
 // Verified WeChat host classes the production hooks install onto.
 @interface MMHeadImageView : UIImageView @end

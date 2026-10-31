@@ -58,11 +58,39 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @end
 @implementation CALayer
 - (instancetype)init { if ((self=[super init])) { _maskedCorners=allCorners; _cornerCurve=@"host"; } return self; }
++ (instancetype)layer { return [self new]; }
 - (CGColorRef)borderColor { return _fixtureBorderColor; }
 - (void)setBorderColor:(CGColorRef)c {
     if (c) CGColorRetain(c); if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); _fixtureBorderColor=c;
 }
 - (void)dealloc { if (_fixtureBorderColor) CGColorRelease(_fixtureBorderColor); }
+@end
+@implementation CAShapeLayer @end
+@implementation CALayer (FixtureLayerFactory) @end
+static NSMutableDictionary *sFixturePathInfo;
+@implementation UIBezierPath {
+    UIRectCorner _corners;
+    CGSize _radii;
+}
++ (instancetype)bezierPathWithRoundedRect:(CGRect)rect byRoundingCorners:(UIRectCorner)corners
+                             cornerRadii:(CGSize)radii {
+    UIBezierPath *path = [self new];
+    path->_corners = corners;
+    path->_radii = radii;
+    (void)rect;
+    return path;
+}
+- (CGPathRef)CGPath {
+    void *token = malloc(1);
+    if (!sFixturePathInfo) sFixturePathInfo = [NSMutableDictionary dictionary];
+    sFixturePathInfo[[NSValue valueWithPointer:token]] =
+        @[@(_corners), @(_radii.width), @(_radii.height)];
+    return (CGPathRef)token;
+}
++ (NSArray *)fixtureInfoForPath:(CGPathRef)path {
+    if (!path || !sFixturePathInfo) return nil;
+    return sFixturePathInfo[[NSValue valueWithPointer:(void *)path]];
+}
 @end
 @implementation UIResponder @end
 @implementation UITraitCollection
@@ -173,7 +201,14 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 @implementation ContactInfoViewController @end
 @implementation WCKSettingsViewController @end
 @implementation WCKUnknownViewController @end
-@implementation MMTableViewCell @end
+@implementation MMTableViewCell
+- (void)layoutSubviews { [super layoutSubviews]; }
+@end
+@implementation MMBaseMultiMenuTableViewCell
+- (void)setFrame:(CGRect)frame { [super setFrame:frame]; }
+- (void)layoutSubviews { [super layoutSubviews]; }
+- (void)prepareForReuse { [super prepareForReuse]; }
+@end
 @implementation MMMultiMenuTableViewCell @end
 @implementation UIImageView @end
 @implementation MMHeadImageView @end
@@ -192,6 +227,10 @@ static UIColor *rgb(CGFloat r, CGFloat g, CGFloat b) {
 static WCKSettings *store;
 static NSMutableDictionary *statuses;
 static NSMutableArray<NSDictionary *> *hookTargets;
+static BOOL fixtureMainHooksUnavailable;
+static BOOL fixtureLateHookUnverified;
+static UITableViewCell *fixtureLateProbe;
+static NSUInteger fixtureLateProbeCalls;
 @interface WCKSettings (CornersPrivateStore)
 - (instancetype)initWithFileURL:(NSURL *)url;
 @end
@@ -213,12 +252,22 @@ BOOL WCKMethodMatches(Class c, SEL s, const char *r, const char *const *a, unsig
     return c && s && class_getInstanceMethod(c,s) != NULL;
 }
 BOOL WCKInstallHook(Class c, SEL s, IMP imp, IMP *old, const char *r, const char *const *a, unsigned n) {
+    if (fixtureMainHooksUnavailable && c == NewMainFrameCell.class) return NO;
     BOOL valid=WCKMethodMatches(c,s,r,a,n);
     [hookTargets addObject:@{@"class":c ? NSStringFromClass(c) : @"(nil)",
         @"selector":NSStringFromSelector(s), @"selectorPresent":@(valid)}];
     CHECK_ID("hooks.target-present",valid && imp && old);
     Method m=class_getInstanceMethod(c,s); *old=method_getImplementation(m);
     if (!class_addMethod(c,s,imp,method_getTypeEncoding(m))) method_setImplementation(m,imp);
+    // Model the backend publishing a replacement before reporting completion.
+    if (fixtureLateProbe && c == NewMainFrameCell.class) {
+        if (s == @selector(setFrame:)) [fixtureLateProbe setFrame:CGRectMake(0,0,120,40)];
+        else if (s == @selector(layoutSubviews)) [fixtureLateProbe layoutSubviews];
+        else if (s == @selector(prepareForReuse)) [fixtureLateProbe prepareForReuse];
+        else CHECK_ID("late.known-selector",NO);
+        ++fixtureLateProbeCalls;
+        if (fixtureLateHookUnverified) return NO;
+    }
     return YES;
 }
 static void setting(NSString *key, id value) {
@@ -254,18 +303,28 @@ static void defaults(void) {
 @property(nonatomic, strong) UIColor *hostColor, *hostBorder;
 @end
 @implementation WCKCornerScene @end
-static WCKCornerScene *scene(Class controllerClass, NSInteger row, NSInteger section) {
-    WCKCornerScene *s=[WCKCornerScene new]; s.controller=[controllerClass new];
-    s.window=[UIWindow new]; s.controller.view.window=s.window;
-    s.table=[UITableView new]; s.table.frame=CGRectMake(0,0,420,900);
-    s.table.superview=s.controller.view; s.table.nextResponder=s.controller.view; s.table.window=s.window;
-    s.cell=[controllerClass isSubclassOfClass:NewMainFrameViewController.class] ? [NewMainFrameCell new] : [MMTableViewCell new];
-    s.cell.superview=s.table; s.cell.nextResponder=s.table; s.cell.window=s.window;
+
+static WCKCornerScene *sceneWithRows(Class controllerClass, NSInteger row, NSInteger section,
+                                     NSInteger rows) {
+    WCKCornerScene *s=[WCKCornerScene new];
+    s.controller=[controllerClass new];
+    s.window=[UIWindow new];
+    s.controller.view.window=s.window;
+    s.table=[UITableView new];
+    s.table.frame=CGRectMake(0,0,420,900);
+    s.table.fixtureRows=@[@1,@(rows),@0];
+    s.table.superview=s.controller.view;
+    s.table.nextResponder=s.controller.view;
+    s.table.window=s.window;
+    s.cell=[controllerClass isSubclassOfClass:NewMainFrameViewController.class]
+        ? [NewMainFrameCell new] : [MMTableViewCell new];
+    s.cell.superview=s.table;
+    s.cell.nextResponder=s.table;
+    s.cell.window=s.window;
     [s.table.fixturePaths setObject:[NSIndexPath indexPathForRow:row inSection:section] forKey:s.cell];
-    // A freshly created cell has a zero frame; give every scene a realistic
-    // host frame so style-only checks exercise the real layout path.
     s.cell.frame=CGRectMake(0,100,420,60);
-    s.hostColor=rgb(.2,.3,.4); s.hostBorder=rgb(.4,.5,.6);
+    s.hostColor=rgb(.2,.3,.4);
+    s.hostBorder=rgb(.4,.5,.6);
     s.cell.backgroundColor=s.hostColor;
     for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
         l.cornerRadius=3; l.maskedCorners=allCorners; l.cornerCurve=@"host";
@@ -273,276 +332,154 @@ static WCKCornerScene *scene(Class controllerClass, NSInteger row, NSInteger sec
     }
     return s;
 }
-static void frame(WCKCornerScene *s, CGRect incoming, CGRect expected, const char *tag) {
-    NSUInteger calls=s.cell.fixtureFrameCalls, content=s.cell.contentView.fixtureFrameCalls;
+static void layout(WCKCornerScene *s) {
+    NSUInteger calls=s.cell.fixtureLayoutCalls;
+    [s.cell layoutSubviews];
+    CHECK_ID("layout.original-once",s.cell.fixtureLayoutCalls==calls+1);
+    CHECK_ID("layout.content-bounds",sameRect(s.cell.contentView.frame,s.cell.bounds));
+}
+static void setFrameExpect(WCKCornerScene *s, CGRect incoming, CGRect expected, const char *tag) {
     s.cell.frame=incoming;
-    CHECK_ID("original.setter-once",s.cell.fixtureFrameCalls==calls+1);
-    CHECK_ID("content.no-setter-write",s.cell.contentView.fixtureFrameCalls==content);
     CHECK_ID(tag,sameRect(s.cell.frame,expected));
 }
-static void layout(WCKCornerScene *s) {
-    NSUInteger calls=s.cell.fixtureLayoutCalls, content=s.cell.contentView.fixtureFrameCalls;
-    [s.cell layoutSubviews];
-    CHECK_ID("original.layout-once",s.cell.fixtureLayoutCalls==calls+1);
-    CHECK_ID("content.original-only",s.cell.contentView.fixtureFrameCalls==content+1);
-    CHECK_ID("content.bounds",sameRect(s.cell.contentView.frame,s.cell.bounds));
-    CHECK_ID("layer.no-clipping",!s.cell.layer.masksToBounds && !s.cell.backgroundView.layer.masksToBounds);
-    CHECK_ID("layer.content-untouched",s.cell.contentView.layer.cornerRadius==0 &&
-        [s.cell.contentView.layer.cornerCurve isEqual:@"host"] && s.cell.contentView.backgroundColor==nil);
-    CHECK_ID("layer.selection-not-clipped",!s.cell.selectedBackgroundView.layer.masksToBounds);
+static void expectStyle(WCKCornerScene *s, CGFloat radius, UIRectCorner corners,
+                        const char *tag) {
+    CALayer *maskLayer=s.cell.layer.mask;
+    CHECK_ID(tag,[maskLayer isKindOfClass:CAShapeLayer.class]);
+    NSArray *info=[UIBezierPath fixtureInfoForPath:((CAShapeLayer *)maskLayer).path];
+    CHECK_ID(tag,info!=nil && near([info[1] doubleValue],radius) &&
+        [info[0] unsignedIntegerValue]==corners);
+    CHECK_ID(tag,sameRect(maskLayer.frame,s.cell.bounds));
 }
 static void hostStyle(WCKCornerScene *s, const char *tag) {
-    for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
-        CHECK_ID(tag,near(l.cornerRadius,3) && l.maskedCorners==allCorners && [l.cornerCurve isEqual:@"host"]);
-        CHECK_ID(tag,near(l.borderWidth,1) && sameColor(l.borderColor,s.hostBorder.CGColor));
-    }
+    CALayer *layer=s.cell.layer;
+    CHECK_ID(tag,layer.mask==nil && near(layer.cornerRadius,3) && layer.maskedCorners==allCorners &&
+        [layer.cornerCurve isEqual:@"host"] && !layer.masksToBounds);
+    CHECK_ID(tag,near(layer.borderWidth,1) && sameColor(layer.borderColor,s.hostBorder.CGColor));
     CHECK_ID(tag,s.cell.backgroundColor==s.hostColor);
 }
-static void rounded(WCKCornerScene *s) {
-    // Every row is a card: all four corners, not just the section's first/last.
-    for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
-        CHECK_ID("rows.radius",near(l.cornerRadius,12));
-        CHECK_ID("rows.mask",l.maskedCorners==allCorners);
-        CHECK_ID("rows.curve",[l.cornerCurve isEqual:kCACornerCurveContinuous]);
-        CHECK_ID("border.unconfigured",near(l.borderWidth,1) && sameColor(l.borderColor,s.hostBorder.CGColor));
-    }
-    CALayer *selected=s.cell.selectedBackgroundView.layer;
-    CHECK_ID("rows.selection-radius",near(selected.cornerRadius,12));
-    CHECK_ID("rows.selection-mask",selected.maskedCorners==allCorners);
-    CHECK_ID("rows.selection-curve",[selected.cornerCurve isEqual:kCACornerCurveContinuous]);
-    CHECK_ID("fill.default-card",sameColor(s.cell.backgroundColor.CGColor,rgb(1,1,1).CGColor) &&
-        sameColor(s.cell.backgroundView.backgroundColor.CGColor,rgb(1,1,1).CGColor));
+static CGRect insetFrame(CGRect f, CGFloat margin, CGFloat top, CGFloat bottom) {
+    CGRect out=f;
+    out.origin.x+=margin; out.size.width-=2*margin;
+    out.origin.y+=top; out.size.height-=top+bottom;
+    return out;
 }
+
 static void geometry(void) {
-    WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
     setting(@"globalCornerMargin",@31);
     CHECK_ID("settings.margin-max-30",[WCKSettings.shared.snapshot[@"globalCornerMargin"] doubleValue]==30);
     setting(@"globalCornerMargin",@24);
-    CGRect original=CGRectMake(0,100,420,60), inset=CGRectMake(24,100,372,60);
-    frame(s,original,inset,"geometry.frame"); layout(s); rounded(s);
-    for (unsigned i=0;i<50;++i) { frame(s,s.cell.frame,inset,"geometry.no-accumulation"); layout(s); }
-    setting(@"globalCornerMargin",@0);
-    frame(s,s.cell.frame,original,"geometry.margin-zero-restores"); layout(s);
-    setting(@"globalCornerMargin",@24);
-    CGRect narrow=CGRectMake(40,100,340,60);
-    frame(s,narrow,narrow,"geometry.host-narrow"); layout(s);
-    for (NSInteger row=0;row<3;++row) {
-        WCKCornerScene *r=scene(ContactsViewController.class,row,1);
-        frame(r,original,inset,"geometry.contacts"); layout(r); rounded(r);
-    }
-    // The UITableView may insert wrapper views. Its bounds and the cell frame
-    // then have different coordinate origins; margin is measured after convert.
-    WCKCornerScene *wrapped=scene(NewMainFrameViewController.class,0,0);
-    UIView *wrapper=[UIView new]; wrapper.frame=CGRectMake(30,0,500,900); wrapper.bounds=CGRectMake(0,0,500,900);
-    wrapper.superview=wrapped.table; wrapper.nextResponder=wrapped.table; wrapper.window=wrapped.window;
-    wrapped.table.frame=CGRectMake(0,0,420,900); wrapped.table.bounds=CGRectMake(10,0,420,900);
-    wrapped.cell.superview=wrapper; wrapped.cell.nextResponder=wrapper;
-    frame(wrapped,CGRectMake(-20,100,420,60),CGRectMake(4,100,372,60),"geometry.wrapper-coordinate-conversion");
-    layout(wrapped);
-    // Reparent an already-inset cell to a new wrapper at the same window origin.
-    // Recovery must translate the remembered host baseline, not inset the old
-    // applied x=24 frame a second time.
-    WCKCornerScene *migrating=scene(NewMainFrameViewController.class,0,0);
-    frame(migrating,original,inset,"geometry.migration-initial");
-    UITableView *oldTable=migrating.table;
-    UITableView *newTable=[UITableView new]; newTable.frame=CGRectMake(0,0,420,900);
-    newTable.superview=migrating.controller.view; newTable.nextResponder=migrating.controller.view; newTable.window=migrating.window;
-    UIView *newWrapper=[UIView new]; newWrapper.frame=CGRectMake(0,0,420,900); newWrapper.bounds=newWrapper.frame;
-    newWrapper.superview=newTable; newWrapper.nextResponder=newTable; newWrapper.window=migrating.window;
-    migrating.cell.superview=newWrapper; migrating.cell.nextResponder=newWrapper;
-    [newTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:migrating.cell];
-    migrating.table=newTable;
-    frame(migrating,inset,inset,"geometry.migration-no-double-inset");
-    CHECK_ID("geometry.migration-keeps-old-table-alive",oldTable!=nil);
-    layout(migrating);
-    // Same cell superview, new table ancestor. This catches loss of the host
-    // baseline when table identity changes but the applied frame still matches.
-    WCKCornerScene *sameParent=scene(NewMainFrameViewController.class,0,0);
-    frame(sameParent,original,inset,"geometry.same-parent-initial");
-    UITableView *previousTable=sameParent.table;
-    UIView *sharedWrapper=[UIView new]; sharedWrapper.frame=CGRectMake(0,0,420,900);
-    sharedWrapper.bounds=sharedWrapper.frame; sharedWrapper.superview=previousTable;
-    sharedWrapper.nextResponder=previousTable; sharedWrapper.window=sameParent.window;
-    sameParent.cell.superview=sharedWrapper; sameParent.cell.nextResponder=sharedWrapper;
-    layout(sameParent);
-    UITableView *replacementTable=[UITableView new]; replacementTable.frame=CGRectMake(0,0,420,900);
-    replacementTable.superview=sameParent.controller.view; replacementTable.nextResponder=sameParent.controller.view;
-    replacementTable.window=sameParent.window;
-    sharedWrapper.superview=replacementTable; sharedWrapper.nextResponder=replacementTable;
-    [replacementTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:sameParent.cell];
-    sameParent.table=replacementTable;
-    layout(sameParent);
-    setting(@"globalCornerMargin",@0); layout(sameParent);
-    CHECK_ID("geometry.same-parent-table-change-restores-host",sameRect(sameParent.cell.frame,original));
-    setting(@"globalCornerMargin",@24);
-    // A different wrapper origin must compare old/new frames only after both
-    // have been converted to the destination parent's coordinate space.
-    WCKCornerScene *offsetMigration=scene(NewMainFrameViewController.class,0,0);
-    frame(offsetMigration,original,inset,"geometry.offset-migration-initial");
-    UIView *oldParent=offsetMigration.cell.superview;
-    UITableView *offsetTable=[UITableView new]; offsetTable.frame=CGRectMake(0,0,420,900);
-    offsetTable.superview=offsetMigration.controller.view; offsetTable.nextResponder=offsetMigration.controller.view;
-    offsetTable.window=offsetMigration.window;
-    UIView *offsetWrapper=[UIView new]; offsetWrapper.frame=CGRectMake(30,0,420,900);
-    offsetWrapper.bounds=CGRectMake(0,0,420,900); offsetWrapper.superview=offsetTable;
-    offsetWrapper.nextResponder=offsetTable; offsetWrapper.window=offsetMigration.window;
-    offsetMigration.cell.superview=offsetWrapper; offsetMigration.cell.nextResponder=offsetWrapper;
-    [offsetTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:offsetMigration.cell];
-    offsetMigration.table=offsetTable;
-    CGRect translatedApplied=[oldParent convertRect:inset toView:offsetWrapper];
-    CGRect translatedHost=[oldParent convertRect:original toView:offsetWrapper];
-    frame(offsetMigration,translatedApplied,translatedApplied,"geometry.offset-migration-applied");
-    layout(offsetMigration);
-    setting(@"globalCornerMargin",@0); layout(offsetMigration);
-    CHECK_ID("geometry.offset-parent-change-restores-host",sameRect(offsetMigration.cell.frame,translatedHost));
-    setting(@"globalCornerMargin",@24);
-    // A host can synchronously lay out another cell during this cell's original
-    // layout. Per-cell depth must not suppress that other cell's corner pass.
-    WCKCornerScene *outer=scene(NewMainFrameViewController.class,0,0);
-    WCKCornerScene *nested=scene(ContactsViewController.class,0,1);
-    outer.cell.frame=original; nested.cell.frame=original;
-    outer.cell.fixtureLayoutCallback=^{[nested.cell layoutSubviews];};
-    layout(outer);
-    CHECK_ID("geometry.nested-other-cell",near(nested.cell.frame.origin.x,24) &&
-        near(nested.cell.frame.size.width,372) && near(nested.cell.layer.cornerRadius,12));
-}
-static void isolation(void) {
-    NSArray *excluded=@[WCKSettingsViewController.class,WCKUnknownViewController.class];
-    setting(@"mainFrameCornerEnabled",@YES);
-    {
-        for (Class c in excluded) {
-            WCKCornerScene *s=scene(c,0,0); CGRect r=CGRectMake(0,100,420,60);
-            frame(s,r,r,"isolation.page-frame"); layout(s); hostStyle(s,"isolation.page-style");
-        }
-        WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-        UIButton *b=[UIButton new]; b.superview=s.table; b.nextResponder=s.table; b.window=s.window;
-        b.backgroundColor=s.hostColor; b.layer.cornerRadius=3; b.frame=CGRectMake(0,1,420,40);
-        [b layoutSubviews];
-        CHECK_ID("isolation.button",sameRect(b.frame,CGRectMake(0,1,420,40)) &&
-            near(b.layer.cornerRadius,3) && b.backgroundColor==s.hostColor && !b.layer.masksToBounds);
-    }
-    NSArray *pageOnly = @[
-        @{ @"class": FindFriendEntryViewController.class, @"key": @"discoverPageCornerEnabled" },
-        @{ @"class": MoreViewController.class, @"key": @"myPageCornerEnabled" },
-        @{ @"class": ContactInfoViewController.class, @"key": @"friendProfileCornerEnabled" }
-    ];
-    for (NSDictionary *entry in pageOnly) {
-        Class c=entry[@"class"];
-        NSString *pageKey=entry[@"key"];
-        WCKCornerScene *s=scene(c,0,0);
-        setting(pageKey,@NO);
-        frame(s,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"scope.page-off");
-        layout(s); hostStyle(s,"scope.page-off-host");
-        setting(pageKey,@YES);
-        frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"scope.page-on");
-        layout(s); rounded(s);
-    }
-    // Fail-closed: missing window/index path/recognized parent and impossible geometry.
-    // A very narrow but otherwise valid table is NOT an invalid case: the module
-    // rounds it with a capped radius, so it is asserted separately below.
-    for (unsigned kind=0;kind<4;++kind) {
-        WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-        CGRect r=CGRectMake(0,100,420,60);
-        if (kind==0) s.cell.window=nil;
-        if (kind==1) [s.table.fixturePaths removeObjectForKey:s.cell];
-        if (kind==2) { s.cell.superview=nil; s.cell.nextResponder=nil; }
-        if (kind==3) r.size.width=NAN;
-        NSUInteger before=s.cell.fixtureFrameCalls; s.cell.frame=r;
-        CHECK_ID("invalid.original-once",s.cell.fixtureFrameCalls==before+1);
-        if (kind==3) CHECK_ID("invalid.nan",isnan(s.cell.frame.size.width));
-        else CHECK_ID("invalid.geometry",sameRect(s.cell.frame,r));
-        [s.cell layoutSubviews]; hostStyle(s,"invalid.style");
-    }
-    // Geometry too narrow for the configured margin: keep the host frame and
-    // clamp the radius to half the shorter side instead of skipping rounding.
-    WCKCornerScene *narrow=scene(NewMainFrameViewController.class,0,0);
-    narrow.table.bounds=CGRectMake(0,0,20,900);
-    narrow.cell.frame=CGRectMake(0,100,20,60);
-    [narrow.cell layoutSubviews];
-    CHECK_ID("geometry.narrow-no-inset",sameRect(narrow.cell.frame,CGRectMake(0,100,20,60)));
-    CHECK_ID("geometry.narrow-radius-capped",near(narrow.cell.layer.cornerRadius,10));
-    // Vertical card spacing comes from the cell frame, so neighbours cannot
-    // share an edge and hide their rounded corners.
-    setting(@"globalCornerSpacing",@12);
-    WCKCornerScene *spaced=scene(NewMainFrameViewController.class,0,0);
-    frame(spaced,CGRectMake(0,100,420,60),CGRectMake(24,106,372,48),"geometry.spacing");
-    layout(spaced);
+    setting(@"globalCornerSpacing",@8);
+    setting(@"globalCornerRadius",@12);
+
+    UIRectCorner top=UIRectCornerTopLeft|UIRectCornerTopRight;
+    UIRectCorner bottom=UIRectCornerBottomLeft|UIRectCornerBottomRight;
+    CGRect host=CGRectMake(0,100,420,60);
+
+    WCKCornerScene *first=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.frame");
+    CGRect alreadyInset=first.cell.frame;
+    setFrameExpect(first,alreadyInset,alreadyInset,"geometry.before-layout-no-double-inset");
+    CGRect resized=CGRectMake(0,120,400,60);
+    setFrameExpect(first,resized,insetFrame(resized,24,0,0),"geometry.resize");
+    alreadyInset=first.cell.frame;
+    setFrameExpect(first,alreadyInset,alreadyInset,"geometry.resize-no-double-inset");
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.after-resize");
+    layout(first);
+    expectStyle(first,12,top,"geometry.first-style");
+    CHECK_ID("geometry.clear-content",sameColor(first.cell.contentView.backgroundColor.CGColor,
+        [UIColor clearColor].CGColor));
+
+    WCKCornerScene *middle=sceneWithRows(NewMainFrameViewController.class,1,1,3);
+    setFrameExpect(middle,host,insetFrame(host,24,0,0),"geometry.middle-frame");
+    layout(middle);
+    expectStyle(middle,0,0,"geometry.middle-style");
+
+    WCKCornerScene *last=sceneWithRows(NewMainFrameViewController.class,2,1,3);
+    setFrameExpect(last,host,insetFrame(host,24,0,0),"geometry.last-frame");
+    layout(last);
+    expectStyle(last,12,bottom,"geometry.last-style");
+
+    WCKCornerScene *single=sceneWithRows(ContactsViewController.class,0,0,1);
+    setFrameExpect(single,host,insetFrame(host,24,0,0),"geometry.single-frame");
+    layout(single);
+    expectStyle(single,12,UIRectCornerTopLeft|UIRectCornerTopRight|UIRectCornerBottomLeft|UIRectCornerBottomRight,"geometry.single-style");
+
+    // Zero spacing must not leave a hole: the row keeps its full height.
     setting(@"globalCornerSpacing",@0);
-    frame(spaced,spaced.cell.frame,CGRectMake(24,100,372,60),"geometry.spacing-cleared");
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-zero-frame");
+    layout(first);
+    expectStyle(first,12,top,"geometry.spacing-zero-style");
+    setting(@"globalCornerSpacing",@8);
+    setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.spacing-back-frame");
+
+    // The host may hand the same frame again; insets must not accumulate.
+    for (unsigned i=0;i<20;++i) setFrameExpect(first,host,insetFrame(host,24,0,0),"geometry.stable");
+    layout(first);
+
+    // Narrow rows clamp the margin instead of producing a negative width.
+    WCKCornerScene *narrow=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    narrow.cell.frame=CGRectMake(40,100,20,60);
+    CHECK_ID("geometry.narrow-card",narrow.cell.frame.size.width>=1 && narrow.cell.frame.size.height>0);
+    layout(narrow);
+    NSArray *narrowInfo=[UIBezierPath fixtureInfoForPath:((CAShapeLayer *)narrow.cell.layer.mask).path];
+    CHECK_ID("geometry.narrow-radius",narrowInfo!=nil &&
+        [narrowInfo[1] doubleValue]<=
+        MIN(narrow.cell.bounds.size.width,narrow.cell.bounds.size.height)/2.0+0.001);
+
+    // Disabling restores both the frame and the layer.
+    setting(@"corners",@NO);
+    setFrameExpect(first,host,host,"geometry.disabled-frame");
+    layout(first);
+    hostStyle(first,"geometry.disabled-style");
+}
+
+static void isolation(void) {
+    // Unknown controllers are outside every page gate.
+    WCKCornerScene *unknown=sceneWithRows(WCKUnknownViewController.class,0,1,3);
+    setFrameExpect(unknown,CGRectMake(0,100,420,60),CGRectMake(0,100,420,60),"isolation.page-off-frame");
+    layout(unknown);
+    hostStyle(unknown,"isolation.page-off-style");
+
+    // Generic views outside the cell path keep their own layer untouched.
+    setting(@"corners",@YES);
+    UIImageView *image=[UIImageView new];
+    image.layer.cornerRadius=4;
+    image.frame=CGRectMake(0,0,40,40);
+    [image layoutSubviews];
+    CHECK_ID("isolation.image-layer",near(image.layer.cornerRadius,4));
+    UIButton *button=[UIButton new];
+    button.backgroundColor=rgb(.9,.9,.9);
+    button.frame=CGRectMake(0,0,80,30);
+    [button layoutSubviews];
+    CHECK_ID("isolation.button-fill",sameColor(button.backgroundColor.CGColor,rgb(.9,.9,.9).CGColor));
 }
 
 static void restore(void) {
-    WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-    setting(@"globalCornerFill",@"#123456"); setting(@"globalCornerStroke",@2);
-    setting(@"globalCornerStrokeColor",@"#AABBCC");
-    frame(s,CGRectMake(0,100,420,60),CGRectMake(24,100,372,60),"restore.initial-frame"); layout(s);
-    CHECK_ID("restore.fill-applied",sameColor(s.cell.backgroundColor.CGColor,rgb(18/255.,52/255.,86/255.).CGColor));
-    CHECK_ID("restore.border-applied",near(s.cell.layer.borderWidth,2) &&
-        sameColor(s.cell.layer.borderColor,rgb(170/255.,187/255.,204/255.).CGColor));
-    setting(@"globalCornerFill",@""); setting(@"globalCornerStroke",@0); setting(@"globalCornerStrokeColor",@"");
+    setting(@"globalCornerSpacing",@8);
+    CGRect host=CGRectMake(0,100,420,60);
+    WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"restore.inset");
     layout(s);
-    CHECK_ID("restore.default-fill",sameColor(s.cell.backgroundColor.CGColor,rgb(1,1,1).CGColor));
-    CHECK_ID("restore.empty-border",near(s.cell.layer.borderWidth,1) && sameColor(s.cell.layer.borderColor,s.hostBorder.CGColor));
-    setting(@"corners",@NO); layout(s); hostStyle(s,"restore.off");
-    setting(@"corners",@YES); setting(@"globalCornerFill",@"#123456");
-    setting(@"globalCornerStroke",@2); setting(@"globalCornerStrokeColor",@"#AABBCC"); layout(s);
-    // Host replaces our last-applied values. A following pass must adopt, not erase them.
-    UIColor *newHost=rgb(.8,.1,.2), *newBorder=rgb(.7,.2,.9);
-    s.cell.backgroundColor=newHost;
-    for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
-        l.cornerRadius=7; l.maskedCorners=kCALayerMinXMaxYCorner; l.cornerCurve=@"new-host";
-        l.borderWidth=3; l.borderColor=newBorder.CGColor;
-    }
-    layout(s); setting(@"enabled",@NO); layout(s);
-    for (CALayer *l in @[s.cell.layer,s.cell.backgroundView.layer]) {
-        CHECK_ID("restore.host-new-values",near(l.cornerRadius,7) && l.maskedCorners==kCALayerMinXMaxYCorner &&
-            [l.cornerCurve isEqual:@"new-host"] && near(l.borderWidth,3) && sameColor(l.borderColor,newBorder.CGColor));
-    }
-    CHECK_ID("restore.host-new-bg",s.cell.backgroundColor==newHost);
-    defaults(); setting(@"myPageCornerEnabled",@NO); s=scene(MoreViewController.class,0,0); layout(s); hostStyle(s,"restore.list-excluded");
-    setting(@"myPageCornerEnabled",@YES); layout(s); rounded(s);
-    // Same cell migrates to an excluded page, not a new cell.
-    UIViewController *excluded=[WCKSettingsViewController new];
-    s.table.nextResponder=excluded.view; s.table.superview=excluded.view;
-    layout(s); hostStyle(s,"restore.page-migration");
-    s=scene(NewMainFrameViewController.class,0,0); layout(s);
-    NSUInteger before=s.cell.fixtureReuseCalls; [s.cell prepareForReuse];
-    CHECK_ID("original.reuse-once",s.cell.fixtureReuseCalls==before+1); hostStyle(s,"restore.reuse");
-    // A reuse cannot resurrect the old page's baseline.
-    s.cell.backgroundColor=newHost; s.cell.layer.cornerRadius=9;
-    setting(@"corners",@NO); layout(s);
-    CHECK_ID("restore.reuse-drops-state",s.cell.backgroundColor==newHost && near(s.cell.layer.cornerRadius,9));
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"restore.applied");
 
-    // UIKit may dequeue a detached cell. Its frame remains in the old local
-    // coordinate space, so reuse must still return our owned inset to baseline.
-    defaults();
-    WCKCornerScene *detached=scene(NewMainFrameViewController.class,0,0);
-    CGRect original=CGRectMake(0,100,420,60), inset=CGRectMake(24,100,372,60);
-    frame(detached,original,inset,"reuse.detached-initial"); layout(detached);
-    detached.cell.superview=nil; detached.cell.nextResponder=nil; detached.cell.window=nil;
-    [detached.cell prepareForReuse];
-    CHECK_ID("reuse.detached-restores-host",sameRect(detached.cell.frame,original));
-    hostStyle(detached,"reuse.detached-style");
+    setting(@"corners",@NO);
+    setFrameExpect(s,host,host,"restore.frame");
+    layout(s);
+    hostStyle(s,"restore.host-values");
 
-    // The wrapper can remain the cell's parent while being moved from one
-    // table to another. Table identity must not block restoration in the same
-    // coordinate system.
-    defaults();
-    WCKCornerScene *moved=scene(NewMainFrameViewController.class,0,0);
-    frame(moved,original,inset,"reuse.table-change-initial");
-    UITableView *oldTable=moved.table;
-    UIView *wrapper=[UIView new]; wrapper.frame=CGRectMake(0,0,420,900);
-    wrapper.bounds=wrapper.frame; wrapper.superview=oldTable; wrapper.nextResponder=oldTable;
-    wrapper.window=moved.window; moved.cell.superview=wrapper; moved.cell.nextResponder=wrapper;
-    layout(moved);
-    UITableView *newTable=[UITableView new]; newTable.frame=CGRectMake(0,0,420,900);
-    newTable.superview=moved.controller.view; newTable.nextResponder=moved.controller.view;
-    newTable.window=moved.window; wrapper.superview=newTable; wrapper.nextResponder=newTable;
-    [newTable.fixturePaths setObject:[NSIndexPath indexPathForRow:0 inSection:0] forKey:moved.cell];
-    moved.table=newTable; moved.cell.window=nil;
-    [moved.cell prepareForReuse];
-    CHECK_ID("reuse.table-change-restores-host",sameRect(moved.cell.frame,original));
+    setting(@"corners",@YES);
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"reuse.inset-before");
+    layout(s);
+    [s.cell prepareForReuse];
+    CHECK_ID("reuse.reuse-called",s.cell.fixtureReuseCalls==1);
+    hostStyle(s,"reuse.host-style");
+    // A dequeued cell starts from the host state until the table re-frames it.
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"reuse.inset-after");
+    layout(s);
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"reuse.reapplied");
 }
+
 static void drainRefresh(void) {
     __block BOOL finished=NO;
     dispatch_async(dispatch_get_main_queue(), ^{ finished=YES; });
@@ -552,51 +489,89 @@ static void drainRefresh(void) {
     CHECK_ID("refresh.main-queue-drained",finished);
 }
 static void refresh(void) {
-    // Register while master disabled. Refresh must use only weakly registered cells.
-    setting(@"enabled",@NO); WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-    s.cell.frame=CGRectMake(0,100,420,60); layout(s); hostStyle(s,"refresh.off-original");
+    setting(@"globalCornerSpacing",@8);
+    CGRect host=CGRectMake(0,100,420,60);
+    WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+    setFrameExpect(s,host,insetFrame(host,24,0,0),"refresh.initial-frame");
+    layout(s);
+    expectStyle(s,12,UIRectCornerTopLeft|UIRectCornerTopRight,"refresh.initial");
+    NSUInteger needs=s.cell.fixtureNeedsLayoutCalls;
+    setting(@"globalCornerRadius",@18);
+    WCKRefreshCorners();
     drainRefresh();
-    NSUInteger before=s.cell.fixtureLayoutCalls, needs=s.cell.fixtureNeedsLayoutCalls;
-    setting(@"enabled",@YES); WCKRefreshCorners(); drainRefresh();
-    CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1 &&
-        s.cell.fixtureLayoutCalls==before);
+    CHECK_ID("refresh.registered",s.cell.fixtureNeedsLayoutCalls==needs+1);
     layout(s);
-    CHECK_ID("refresh.radius",near(s.cell.layer.cornerRadius,12));
-    setting(@"globalCornerRadius",@18); before=s.cell.fixtureLayoutCalls; WCKRefreshCorners(); drainRefresh();
+    expectStyle(s,18,UIRectCornerTopLeft|UIRectCornerTopRight,"refresh.radius");
+    setting(@"globalCornerRadius",@12);
+    setting(@"corners",@NO);
+    WCKRefreshCorners();
+    drainRefresh();
     layout(s);
-    CHECK_ID("refresh.parameters",s.cell.fixtureLayoutCalls==before+1 && near(s.cell.layer.cornerRadius,18));
-    setting(@"corners",@NO); WCKRefreshCorners(); drainRefresh(); layout(s); hostStyle(s,"refresh.off-restored");
+    hostStyle(s,"refresh.off-restored");
 }
+
 static void lifetime(void) {
     __weak UITableViewCell *weakCell=nil;
     @autoreleasepool {
-        WCKCornerScene *s=scene(NewMainFrameViewController.class,0,0);
-        s.cell.frame=CGRectMake(0,100,420,60); layout(s); weakCell=s.cell;
+        WCKCornerScene *s=sceneWithRows(NewMainFrameViewController.class,0,1,3);
+        layout(s);
+        weakCell=s.cell;
         CHECK_ID("lifetime.alive",weakCell!=nil);
     }
-    CHECK_ID("lifetime.weak",weakCell==nil); WCKRefreshCorners(); drainRefresh();
+    CHECK_ID("lifetime.weak",weakCell==nil);
+    WCKRefreshCorners();
+    drainRefresh();
 }
+
+static void lateHooks(BOOL unverified) {
+    fixtureMainHooksUnavailable=NO;
+    fixtureLateProbe=[NewMainFrameCell new];
+    fixtureLateHookUnverified=unverified;
+    fixtureLateProbeCalls=0;
+    WCKInstallCornersLate();
+    CHECK_ID("late.published-and-called",fixtureLateProbeCalls==3);
+    NSUInteger frames=fixtureLateProbe.fixtureFrameCalls;
+    NSUInteger layouts=fixtureLateProbe.fixtureLayoutCalls;
+    NSUInteger reuses=fixtureLateProbe.fixtureReuseCalls;
+    [fixtureLateProbe setFrame:CGRectMake(0,0,120,40)];
+    [fixtureLateProbe layoutSubviews];
+    [fixtureLateProbe prepareForReuse];
+    CHECK_ID("late.frame-forwarded",fixtureLateProbe.fixtureFrameCalls==frames+1);
+    CHECK_ID("late.layout-forwarded",fixtureLateProbe.fixtureLayoutCalls==layouts+1);
+    CHECK_ID("late.reuse-forwarded",fixtureLateProbe.fixtureReuseCalls==reuses+1);
+    fixtureLateProbe=nil;
+}
+
 static void abi(void) {
-    const char *frameArgs[]={@encode(CGRect)};
-    CHECK_ID("abi.frame",WCKMethodMatches(UITableViewCell.class,@selector(setFrame:),@encode(void),frameArgs,1));
     CHECK_ID("hooks.nonempty",hookTargets.count>0);
     for (NSDictionary *entry in hookTargets) {
         NSString *c=entry[@"class"], *sel=entry[@"selector"];
-        BOOL cellTarget=[@[@"MMTableViewCell",@"NewMainFrameCell"] containsObject:c];
+        BOOL cellTarget=[@[@"UITableViewCell",@"MMTableViewCell",@"MMMultiMenuTableViewCell",@"NewMainFrameCell"] containsObject:c];
+        BOOL pageTarget=[@[@"NewMainFrameViewController",@"ContactsViewController",
+                           @"FindFriendEntryViewController",@"MoreViewController",
+                           @"ContactInfoViewController"] containsObject:c];
         BOOL verifiedTarget=[@[@"MMHeadImageView", @"TLProfileImageView", @"FakeHeadImageView",
                               @"MMMsgContentNavBar", @"MMNewMsgContentNavBar", @"MMTabBar"] containsObject:c];
         BOOL viewTarget=[c isEqual:@"UIView"];
         BOOL allowedSelector=viewTarget
             ? ([sel isEqual:@"didMoveToWindow"] || [sel isEqual:@"setBackgroundColor:"] ||
                [sel isEqual:@"layoutSubviews"])
+            : pageTarget ? [sel isEqual:@"tableView:heightForRowAtIndexPath:"]
             : ([sel isEqual:@"setFrame:"] || [sel isEqual:@"layoutSubviews"] ||
                [sel isEqual:@"prepareForReuse"]);
-        CHECK_ID("hooks.allowed-target",(cellTarget || verifiedTarget || viewTarget) && allowedSelector);
+        CHECK_ID("abi.allowed-target",(cellTarget || pageTarget || verifiedTarget || viewTarget) &&
+            allowedSelector);
+        CHECK_ID("abi.selector-present",[entry[@"selectorPresent"] boolValue]);
     }
+    // The frame hook is the point of this design: the row must arrive pre-inset.
+    CHECK_ID("abi.frame",WCKMethodMatches(UITableViewCell.class,@selector(setFrame:),
+        @encode(void),(const char *[]){@encode(CGRect)},1));
 }
+
 int main(int argc, char **argv) {
     @autoreleasepool {
-        CHECK_ID("fixture.argument",argc==2); CHECK_ID("fixture.main-thread",NSThread.isMainThread);
+        CHECK_ID("fixture.argument",argc==2);
+        CHECK_ID("fixture.main-thread",NSThread.isMainThread);
         NSString *home=NSProcessInfo.processInfo.environment[@"HOME"];
         CHECK_ID("fixture.isolated-home",home.length>0 && [home.lastPathComponent hasPrefix:@"corners-"]);
         NSURL *file=[NSURL fileURLWithPath:[home stringByAppendingPathComponent:@"Preferences/corners.plist"]];
@@ -604,15 +579,22 @@ int main(int argc, char **argv) {
         Method shared=class_getClassMethod(WCKSettings.class,@selector(shared));
         Method replacement=class_getClassMethod(WCKSettings.class,@selector(cornersFixtureShared));
         method_exchangeImplementations(shared,replacement);
-        statuses=[NSMutableDictionary new]; hookTargets=[NSMutableArray new]; defaults(); WCKInstallCorners();
-        CHECK_ID("install.ready",[statuses[@"corners"] isEqual:@"ready"]);
+        statuses=[NSMutableDictionary new];
+        hookTargets=[NSMutableArray new];
+        defaults();
         NSString *which=[NSString stringWithUTF8String:argv[1]];
+        BOOL late=[which isEqual:@"late-install"] || [which isEqual:@"late-unverified"];
+        fixtureMainHooksUnavailable=late;
+        WCKInstallCorners();
+        if (!late) CHECK_ID("install.ready",[statuses[@"corners"] isEqual:@"ready"]);
         if ([which isEqual:@"geometry"]) geometry();
         else if ([which isEqual:@"isolation"]) isolation();
         else if ([which isEqual:@"restore"]) restore();
         else if ([which isEqual:@"refresh"]) refresh();
         else if ([which isEqual:@"lifetime"]) lifetime();
         else if ([which isEqual:@"abi"]) abi();
+        else if ([which isEqual:@"late-install"]) lateHooks(NO);
+        else if ([which isEqual:@"late-unverified"]) lateHooks(YES);
         else CHECK_ID("fixture.known-case",NO);
         NSData *data=[NSJSONSerialization dataWithJSONObject:hookTargets options:0 error:NULL];
         printf("HOOK_TARGETS %s\n",[[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] UTF8String]);

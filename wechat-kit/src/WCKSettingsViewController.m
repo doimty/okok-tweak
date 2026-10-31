@@ -234,6 +234,11 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         text = @"尚无状态报告，允许尝试";
     }
     if (row[@"note"]) text = [text stringByAppendingFormat:@"；%@", row[@"note"]];
+    if ([row[@"id"] isEqualToString:@"corners"]) {
+        // Last cell the corner pass looked at, for device-side diagnosis.
+        NSString *diag = self.statuses[@"corners.debug"];
+        if (diag.length) text = [text stringByAppendingFormat:@"\n%@", diag];
+    }
     if (row[@"key"] && [self.settings boolForKey:row[@"key"]] && ![self isReady:row[@"id"]])
         text = [text stringByAppendingString:@"；已保存开启，Hook 状态未确认，仍会尝试运行"];
     return text;
