@@ -6,6 +6,12 @@
 
 // WCR evidence: list-cell candidates plus dedicated avatar/nav-bar/tab-bar
 // paths. Component families can be opted in and are traversed with a view cap.
+// Selector-only probe so the production file compiles against the fake UIKit too.
+@interface WCKCornerLabelProbe : NSObject
+- (NSInteger)numberOfLines;
+@end
+@implementation WCKCornerLabelProbe @end
+
 static char sCornerStateKey;
 static NSHashTable<UITableViewCell *> *sCornerCells; // weak, main-thread only
 static _Thread_local NSUInteger sCornerFrameDepth, sCornerLayoutDepth, sCornerReuseDepth;
@@ -826,7 +832,7 @@ static void WCKCornerApplyStyle(UITableViewCell *cell) {
             if (!state.skipInset && table && cell.frame.size.width + 0.5 < table.bounds.size.width) {
                 for (UIView *sub in cell.contentView.subviews) {
                     if (![sub respondsToSelector:@selector(numberOfLines)]) continue;
-                    NSInteger lines = (NSInteger)[(id)sub numberOfLines];
+                    NSInteger lines = [(WCKCornerLabelProbe *)sub numberOfLines];
                     if (lines > 1 && sub.frame.size.width < 9) {
                         state.skipInset = YES;
                         CGRect full = cell.frame;
