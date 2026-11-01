@@ -234,8 +234,8 @@ static void OKOKSweepAll(void) {
 - (void)didMoveToSuperview {
     %orig;
     if (!OKOKVersionOK()) return;
-    /* 直接在当前调用栈处理：只改自己父层的高度约束 + hidden，开销极小 */
-    OKOKCollapseAdSlotAround(self);
+    /* Logos 里 self 的类型是前向声明的 ATBannerView*，要转成 UIView* 才能调 UIKit */
+    OKOKCollapseAdSlotAround((UIView *)self);
 }
 
 %end
@@ -245,15 +245,17 @@ static void OKOKSweepAll(void) {
 - (void)didMoveToSuperview {
     %orig;
     if (!OKOKVersionOK()) return;
+    UIView *cell = (UIView *)self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!self.superview) return;
-        for (UIView *sib in [self.superview.subviews copy]) {
-            if (sib == self) continue;
+        UIView *parent = cell.superview;
+        if (!parent) return;
+        for (UIView *sib in [parent.subviews copy]) {
+            if (sib == cell) continue;
             if ([NSStringFromClass([sib class]) isEqualToString:@"AutoScrollLableView"]) {
                 OKOKRemoveFromFlow(sib);
             }
         }
-        OKOKRemoveFromFlow(self);
+        OKOKRemoveFromFlow(cell);
     });
 }
 
@@ -264,7 +266,7 @@ static void OKOKSweepAll(void) {
 - (void)didMoveToSuperview {
     %orig;
     if (!OKOKVersionOK()) return;
-    self.hidden = YES;          /* 悬浮层，无布局副作用 */
+    ((UIView *)self).hidden = YES;      /* 悬浮层，无布局副作用 */
 }
 
 %end
