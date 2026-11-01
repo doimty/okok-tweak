@@ -344,6 +344,85 @@ static void OKOKSplashLayerScanOnce(void) {
     }
 }
 /* ================================================================== */
+/* 开屏期间的「摇一摇跳转」拦截                                        */
+/* ================================================================== */
+/*
+ * 实测问题：开屏广告的摇一摇/误触会直接把我们甩到淘宝。
+ * 各家 SDK（倍孜 BeiZiSplashWorker、快手 KSAdSplashShakeManager、美数…）
+ * 摇一摇实现各不相同，逐个追代价太大；直接从**跳转出口**堵：
+ * 启动后 20 秒内（开屏窗口），含广告域名的外跳一律拒绝。
+ *
+ * 只在启动窗口内生效，不影响正常使用时的链接打开。
+ */
+
+static BOOL OKOKInLaunchWindow(void) {
+    if (kOKOKStartTime <= 0) return NO;
+    NSTimeInterval e = [NSDate timeIntervalSinceReferenceDate] - kOKOKStartTime;
+    return (e >= 0 && e <= 20.0);
+}
+
+static BOOL OKOKIsAdJumpURL(NSURL *url) {
+    if (!url) return NO;
+    NSString *s = url.absoluteString;
+    if (!s) return NO;
+    s = [s lowercaseString];
+    if (!s.length) return NO;
+
+    NSArray<NSString *> *needles = @[
+        @"taobao://", @"tmall://", @"tbopen://",
+        @"taobao.com", @"tmall.com", @"tb.cn",
+        @"pinduoduo://", @"yangkeduo.com",
+        @"openapp.jdmobile", @"jd.com",
+        @"snssdk1128://", @"douyin.com",
+        @"kuaishou://", @"gifshow.com"
+    ];
+    for (NSString *n in needles) {
+        if ([s rangeOfString:n].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+%hook UIApplication
+
+- (BOOL)openURL:(NSURL *)url {
+    if (OKOKVersionOK() && OKOKInLaunchWindow() && OKOKIsAdJumpURL(url)) {
+        OKOKMark(@"okok_blocked_jump_legacy.txt");
+        return NO;
+    }
+    return %orig;
+}
+
+- (void)openURL:(NSURL *)url options:(NSDictionary<NSString *, id> *)options
+        completionHandler:(void (^)(BOOL))completion {
+    if (OKOKVersionOK() && OKOKInLaunchWindow() && OKOKIsAdJumpURL(url)) {
+        OKOKMark(@"okok_blocked_jump.txt");
+        if (completion) completion(NO);
+        return;
+    }
+    %orig;
+}
+
+%end
+
+/* 有些 SDK 走 LSApplicationWorkspace 直接拉 App，不经 openURL */
+%hook LSApplicationWorkspace
+
+- (BOOL)openApplicationWithBundleID:(NSString *)bundleID {
+    if (OKOKVersionOK() && OKOKInLaunchWindow() && bundleID) {
+        NSString *b = [bundleID lowercaseString];
+        NSArray<NSString *> *apps = @[@"taobao", @"tmall", @"pinduoduo", @"jd", @"aweme", @"snssdk", @"kuaishou"];
+        for (NSString *a in apps) {
+            if ([b rangeOfString:a].location != NSNotFound) {
+                OKOKMark(@"okok_blocked_jump_ls.txt");
+                return NO;
+            }
+        }
+    }
+    return %orig;
+}
+
+%end
+/* ================================================================== */
 /* 调度：启动后再扫，避开启动路径                                      */
 /* ================================================================== */
 
