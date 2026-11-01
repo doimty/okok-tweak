@@ -290,28 +290,19 @@ static void OKOKSweepAll(void) {
 
 static BOOL kOKOKSplashHiddenOnce = NO;
 
+/*
+ * 实测抓到的真实类名（启动后 2.4s~6.7s 出现，window 的第二层 UITransitionView 上）：
+ *     MSSplashScreenView / MSSplashMediaView / MeiShuSplashAdBottomView / LaunchAdBottomView
+ * 之前盯的 ATNativeMixSplashView 是错的 —— 一次都没命中过。
+ *
+ * 这里只认容器本体 MSSplashScreenView 和素材层 MSSplashMediaView。
+ * 刻意不包含底部栏类：它们和 App 内容同层，动它们会连带影响内容层。
+ */
 static BOOL OKOKIsSplashClass(NSString *name) {
-    return [name isEqualToString:@"ATNativeMixSplashView"]
-        || [name isEqualToString:@"ATNativeSplashViewController"]
-        || [name isEqualToString:@"ATNativeMixSplashContentView"];
+    return [name isEqualToString:@"MSSplashScreenView"]
+        || [name isEqualToString:@"MSSplashMediaView"];
 }
 
-/* 往上找到「最上层非 window 祖先」 */
-static UIView *OKOKTopAncestorBelowWindow(UIView *v) {
-    UIView *best = v;
-    UIView *cur = v;
-    for (int i = 0; i < 30; i++) {
-        UIView *sv = cur.superview;
-        if (!sv) break;
-        NSString *n = NSStringFromClass([sv class]);
-        if ([n isEqualToString:@"UIWindow"] || [n hasSuffix:@"Window"]) {
-            break;
-        }
-        best = sv;
-        cur = sv;
-    }
-    return best;
-}
 
 static void OKOKSplashScanOnce(void) {
     if (kOKOKSplashHiddenOnce) return;
@@ -333,9 +324,10 @@ static void OKOKSplashScanOnce(void) {
 
             NSString *name = NSStringFromClass([v class]);
             if (OKOKIsSplashClass(name)) {
-                UIView *top = OKOKTopAncestorBelowWindow(v);
-                top.hidden = YES;
+                /* 只隐藏它自己。绝不碰祖先 ——
+                   实测藏祖先会把 App 内容层一起藏掉，直接黑屏。 */
                 v.hidden = YES;
+                v.alpha = 0.0;
                 kOKOKSplashHiddenOnce = YES;
                 return;
             }
