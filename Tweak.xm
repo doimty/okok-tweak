@@ -472,26 +472,18 @@ static BOOL OKOKIsAdJumpURL(NSURL *url) {
        改成多轮，覆盖首页建好之后；每轮只是一次视图树遍历，开销很小。 */
     /* 开屏层遮挡：0.5s 起每 200ms 扫一次，最多 45 次（约 9.5 秒）
        实测广告层出现于 2.1~2.4 秒，这个窗口足够覆盖 */
-    /* 1.0 秒时记下 window 层数基线（此时开屏还没出现） */
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        NSArray<UIWindow *> *wins = [UIApplication sharedApplication].windows;
-#pragma clang diagnostic pop
-        for (UIWindow *w in wins) {
-            kOKOKBaselineLayers = MAX(kOKOKBaselineLayers, w.subviews.count);
-        }
-    });
-
-    /* 开屏层遮挡：1.5s 起每 150ms 扫一次，最多 55 次（约 9.7 秒） */
-    for (int i = 0; i < 55; i++) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                     (int64_t)((1.5 + i * 0.15) * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            OKOKSplashLayerScanOnce();
-        });
-    }
+    /* ==============================================================
+     * 开屏层遮挡：已停用。
+     *
+     * 真机诊断（2.2.1 / 2.3.0 落盘）证明按窗口层级遮挡不可行：
+     *   t=2.29 n=2 base=1 | [0]UITransitionView | [1]UITransitionView
+     * 基线取对、也确实隐藏了第 1 层，结果 App 直接黑屏 ——
+     * 说明第 1 层是 App 内容层，不是广告层。
+     * 三次黑屏后停用这条路：窗口层级无法可靠区分广告与内容。
+     *
+     * 目前开屏广告画面无法移除。但「摇一摇跳淘宝」已经通过
+     * 下面的 openURL / LSApplicationWorkspace 拦截解决。
+     * ============================================================== */
 
     static const int64_t kOKOKSweepAt[] = {2, 4, 6, 8, 10, 12, 14, 16, 18, 21, 24, 28};
     for (int i = 0; i < (int)(sizeof(kOKOKSweepAt) / sizeof(kOKOKSweepAt[0])); i++) {
