@@ -293,10 +293,23 @@ static void OKOKSweepAll(void) {
  */
 
 static BOOL kOKOKSplashLayerHandled = NO;
+static NSTimeInterval kOKOKStartTime = 0;
 
+/*
+ * 三道门控，缺一不可（宽松版本实测会黑屏）：
+ *   ① 时间：只在 1.5~7.5 秒内动作（实测广告层出现于 2.1s、消失于 8s）
+ *      启动早期窗口也会短暂出现两层，那两层都是 App 自己的，藏了就黑屏。
+ *   ② 结构签名：第 0 层必须是 UITransitionView，第 1 层必须是匿名 UIView。
+ *      这是两次实测（MeiShu / BeiZi）都成立的签名。
+ *   ③ 动手时强制把第 0 层设回可见 —— 万一是误判也不至于全黑。
+ */
 static void OKOKSplashLayerScanOnce(void) {
     if (kOKOKSplashLayerHandled) return;
     if (!OKOKVersionOK()) return;
+    if (kOKOKStartTime <= 0) return;
+
+    NSTimeInterval elapsed = [NSDate timeIntervalSinceReferenceDate] - kOKOKStartTime;
+    if (elapsed < 1.5 || elapsed > 7.5) return;
 
     @try {
 #pragma clang diagnostic push
@@ -307,7 +320,16 @@ static void OKOKSplashLayerScanOnce(void) {
         for (UIWindow *win in wins) {
             NSArray<UIView *> *subs = win.subviews;
             NSUInteger n = subs.count;
-            if (n < 2) continue;      /* 只有内容层，还没出广告 */
+            if (n < 2) continue;
+
+            NSString *c0 = NSStringFromClass([subs[0] class]);
+            NSString *c1 = NSStringFromClass([subs[1] class]);
+            if (![c0 isEqualToString:@"UITransitionView"]) continue;
+            if (![c1 isEqualToString:@"UIView"]) continue;
+
+            /* 保险：内容层必须可见 */
+            subs[0].hidden = NO;
+            subs[0].alpha = 1.0;
 
             /* 从第 1 层开始藏，第 0 层（App 内容）永远保留 */
             for (NSUInteger k = 1; k < n; k++) {
@@ -326,6 +348,7 @@ static void OKOKSplashLayerScanOnce(void) {
 /* ================================================================== */
 
 %ctor {
+    kOKOKStartTime = [NSDate timeIntervalSinceReferenceDate];
     OKOKMark(@"okok_tweak_loaded.txt");
 
     /* 不在启动路径上干活。
