@@ -204,7 +204,13 @@ static void OKOKSweepView(UIView *v, int depth) {
 static void OKOKSweepAll(void) {
     if (!OKOKVersionOK()) return;
     @try {
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+        /* UIApplication.windows 在 iOS 15 起标记弃用；本项目以 -Werror 编译，
+           这里局部抑制，不改行为（实测该 API 返回的 window 正是我们要扫的那棵）。 */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        NSArray<UIWindow *> *wins = [UIApplication sharedApplication].windows;
+#pragma clang diagnostic pop
+        for (UIWindow *w in wins) {
             OKOKSweepView(w, 0);
         }
     } @catch (NSException *e) {
