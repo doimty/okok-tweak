@@ -271,6 +271,81 @@ static void OKOKSweepAll(void) {
 
 %end
 /* ================================================================== */
+/* 开屏遮罩：只遮不拦                                                  */
+/* ================================================================== */
+/*
+ * 前面六种"拦展示/调 closeAd"的做法全部失败（卡启动画面 / abort / 冻屏）。
+ * 这里换一个完全不碰状态机的做法：广告自己的倒计时照常跑，
+ * 只把盖在最上面的那层开屏容器设为不可见。
+ *
+ * 安全性：
+ *   · 只在类名精确匹配到开屏 SDK 的视图时动作，匹配不到就什么都不做；
+ *   · 从外部定时器轮询，不在视图自己的 -didMoveToSuperview 里改（会无限递归）；
+ *   · 隐藏的是「最上层非 window 祖先」，避免只隐藏广告层导致底下仍是空屏。
+ *
+ * 注意：该做法尚未在"真的拉到广告"的一次启动里验证过 —— 开屏有频次限制，
+ * 连续冷启动会一直不填充。若长时间观察仍未生效，说明命中的类名不对，
+ * 需要重新在广告出现的那一刻抓一次类名。
+ */
+
+static BOOL kOKOKSplashHiddenOnce = NO;
+
+static BOOL OKOKIsSplashClass(NSString *name) {
+    return [name isEqualToString:@"ATNativeMixSplashView"]
+        || [name isEqualToString:@"ATNativeSplashViewController"]
+        || [name isEqualToString:@"ATNativeMixSplashContentView"];
+}
+
+/* 往上找到「最上层非 window 祖先」 */
+static UIView *OKOKTopAncestorBelowWindow(UIView *v) {
+    UIView *best = v;
+    UIView *cur = v;
+    for (int i = 0; i < 30; i++) {
+        UIView *sv = cur.superview;
+        if (!sv) break;
+        NSString *n = NSStringFromClass([sv class]);
+        if ([n isEqualToString:@"UIWindow"] || [n hasSuffix:@"Window"]) {
+            break;
+        }
+        best = sv;
+        cur = sv;
+    }
+    return best;
+}
+
+static void OKOKSplashScanOnce(void) {
+    if (kOKOKSplashHiddenOnce) return;
+    if (!OKOKVersionOK()) return;
+
+    @try {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        NSArray<UIWindow *> *wins = [UIApplication sharedApplication].windows;
+#pragma clang diagnostic pop
+
+        NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithArray:wins];
+        int guard = 0;
+
+        while (stack.count && guard++ < 8000) {
+            UIView *v = [stack lastObject];
+            [stack removeLastObject];
+            if (!v) continue;
+
+            NSString *name = NSStringFromClass([v class]);
+            if (OKOKIsSplashClass(name)) {
+                UIView *top = OKOKTopAncestorBelowWindow(v);
+                top.hidden = YES;
+                v.hidden = YES;
+                kOKOKSplashHiddenOnce = YES;
+                return;
+            }
+
+            [stack addObjectsFromArray:v.subviews];
+        }
+    } @catch (NSException *e) {
+    }
+}
+/* ================================================================== */
 /* 调度：启动后再扫，避开启动路径                                      */
 /* ================================================================== */
 
@@ -280,6 +355,15 @@ static void OKOKSweepAll(void) {
     /* 不在启动路径上干活。
        实测这台设备从冷启动到首页可用约 9-10 秒，所以只扫 2.5s/6s 会全部落空。
        改成多轮，覆盖首页建好之后；每轮只是一次视图树遍历，开销很小。 */
+    /* 开屏遮罩：0.5s 起每 200ms 扫一次，最多 40 次（约 8.5 秒，覆盖广告出现窗口） */
+    for (int i = 0; i < 40; i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                     (int64_t)((0.5 + i * 0.2) * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            OKOKSplashScanOnce();
+        });
+    }
+
     static const int64_t kOKOKSweepAt[] = {2, 4, 6, 8, 10, 12, 14, 16, 18, 21, 24, 28};
     for (int i = 0; i < (int)(sizeof(kOKOKSweepAt) / sizeof(kOKOKSweepAt[0])); i++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
