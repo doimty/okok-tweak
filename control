@@ -1,8 +1,8 @@
 Package: com.doimty.okokadfree
 Name: OKOK 去广告
-Version: 2.0.0
+Version: 2.0.1
 Architecture: iphoneos-arm64
-Description: 首页推广位/打卡浮层/第三方 Banner 去广告（启动后延迟扫描）；会员相关 hook 沿用 1.1.6 原样保留
+Description: 移除 OKOK 首页推广位、打卡浮层与第三方 Banner 广告（不含会员相关逻辑）
 Maintainer: doimty
 Author: doimty
 Section: Tweaks

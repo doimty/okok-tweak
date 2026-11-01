@@ -43,7 +43,9 @@
 /* ================================================================== */
 
 static void OKOKMark(NSString *name) {
-    NSString *path = [@"/var/mobile/Library/Caches" stringByAppendingPathComponent:name];
+    /* 必须写 App 自己能写的目录：/var/mobile/Library/Caches 在沙盒外，
+       App 进程写不进去，标记文件永远不出现（踩过）。 */
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:name];
     [[NSString stringWithFormat:@"%@ pid=%d", [NSDate date], getpid()]
         writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
@@ -217,6 +219,55 @@ static void OKOKSweepAll(void) {
     }
 }
 
+/* ================================================================== */
+/* 事件驱动：广告视图一出现就处理（O(1)，不做树遍历）                  */
+/* ================================================================== */
+/*
+ * 为什么需要：定时扫描（2..28s）之间的空档里，广告会先显示出来，
+ * 等下一轮扫描才被收掉 —— 用户看到的就是"闪一下再消失"。
+ * 这几个 hook 只在对应视图出现时触发一次，工作量是常数级，
+ * 不会像启动期全树扫描那样把 launch 拖到看门狗时限。
+ */
+
+%hook ATBannerView
+
+- (void)didMoveToSuperview {
+    %orig;
+    if (!OKOKVersionOK()) return;
+    /* 直接在当前调用栈处理：只改自己父层的高度约束 + hidden，开销极小 */
+    OKOKCollapseAdSlotAround(self);
+}
+
+%end
+
+%hook OKKYADHomeCell
+
+- (void)didMoveToSuperview {
+    %orig;
+    if (!OKOKVersionOK()) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.superview) return;
+        for (UIView *sib in [self.superview.subviews copy]) {
+            if (sib == self) continue;
+            if ([NSStringFromClass([sib class]) isEqualToString:@"AutoScrollLableView"]) {
+                OKOKRemoveFromFlow(sib);
+            }
+        }
+        OKOKRemoveFromFlow(self);
+    });
+}
+
+%end
+
+%hook OKKYFloatView
+
+- (void)didMoveToSuperview {
+    %orig;
+    if (!OKOKVersionOK()) return;
+    self.hidden = YES;          /* 悬浮层，无布局副作用 */
+}
+
+%end
 /* ================================================================== */
 /* 调度：启动后再扫，避开启动路径                                      */
 /* ================================================================== */
