@@ -304,7 +304,7 @@ static NSUInteger kOKOKBaselineLayers = 0;   /* 启动 1s 时的 window 层数�
  *      这是两次实测（MeiShu / BeiZi）都成立的签名。
  *   ③ 动手时强制把第 0 层设回可见 —— 万一是误判也不至于全黑。
  */
-static void OKOKSplashLayerScanOnce(void) {
+__attribute__((unused)) static void OKOKSplashLayerScanOnce(void) {
     if (kOKOKSplashLayerHandled) return;
     if (!OKOKVersionOK()) return;
     if (kOKOKStartTime <= 0) return;
