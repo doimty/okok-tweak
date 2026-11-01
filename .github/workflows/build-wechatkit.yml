@@ -18,7 +18,9 @@ permissions:
 jobs:
   package:
     name: WeChatKit alpha6 (roothide)
-    runs-on: macos-14
+    # macos-14 is in retirement brownout (retires Nov 2, 2026): jobs on it are
+    # cancelled before any step runs. macos-15 is the migration target.
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       THEOS: ${{ github.workspace }}/.build-wechatkit-theos
