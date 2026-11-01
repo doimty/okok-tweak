@@ -320,6 +320,27 @@ static void OKOKSplashLayerScanOnce(void) {
         for (UIWindow *win in wins) {
             NSArray<UIView *> *subs = win.subviews;
             NSUInteger n = subs.count;
+
+            /* ---- 诊断：把每一轮看到的层结构落盘，用于定位遮挡为何不命中 ---- */
+            if (n >= 2) {
+                NSMutableString *diag = [NSMutableString string];
+                [diag appendFormat:@"t=%.2f n=%lu", elapsed, (unsigned long)n];
+                NSUInteger lim = MIN(n, (NSUInteger)6);
+                for (NSUInteger k = 0; k < lim; k++) {
+                    UIView *v = subs[k];
+                    [diag appendFormat:@" | [%lu]%@ hid=%d alpha=%.1f frame=%@",
+                        (unsigned long)k,
+                        NSStringFromClass([v class]),
+                        (int)v.hidden,
+                        (double)v.alpha,
+                        NSStringFromCGRect(v.frame)];
+                }
+                NSString *path = [NSTemporaryDirectory()
+                                  stringByAppendingPathComponent:@"okok_splash_diag.txt"];
+                [[diag stringByAppendingString:@"\n"]
+                 writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            }
+
             if (n < 2) continue;
 
             NSString *c0 = NSStringFromClass([subs[0] class]);
