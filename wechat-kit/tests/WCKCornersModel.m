@@ -131,6 +131,44 @@ static NSMutableDictionary *sFixturePathInfo;
 - (void)addSubview:(UIView *)v {
     [self.fixtureChildren addObject:v]; v.superview=self; v.nextResponder=self; v.window=self.window;
 }
+- (NSInteger)tag { return _fixtureTag; }
+- (void)setTag:(NSInteger)t { _fixtureTag=t; }
+- (CGPoint)center { return _fixtureCenter; }
+- (void)setCenter:(CGPoint)c { _fixtureCenter=c; }
+- (CGAffineTransform)transform { return _fixtureTransform; }
+- (void)setTransform:(CGAffineTransform)t { _fixtureTransform=t; }
+- (UIViewContentMode)contentMode { return _fixtureContentMode; }
+- (void)setContentMode:(UIViewContentMode)m { _fixtureContentMode=m; }
+- (BOOL)clipsToBounds { return _fixtureClipsToBounds; }
+- (void)setClipsToBounds:(BOOL)b { _fixtureClipsToBounds=b; }
+- (UIView *)viewWithTag:(NSInteger)t {
+    for (UIView *child in self.fixtureChildren) {
+        if (child.tag==t) return child;
+        UIView *found=[child viewWithTag:t];
+        if (found) return found;
+    }
+    return nil;
+}
+- (void)insertSubview:(UIView *)v atIndex:(NSInteger)index {
+    if (!v) return;
+    [v removeFromSuperview];
+    NSUInteger at=index<0 ? 0 : MIN((NSUInteger)index,self.fixtureChildren.count);
+    [self.fixtureChildren insertObject:v atIndex:at];
+    v.superview=self; v.nextResponder=self; v.window=self.window;
+}
+- (void)insertSubview:(UIView *)v aboveSubview:(UIView *)sibling {
+    if (!v) return;
+    NSUInteger at=[self.fixtureChildren indexOfObject:sibling];
+    if (at==NSNotFound) { [self addSubview:v]; return; }
+    [v removeFromSuperview];
+    at=[self.fixtureChildren indexOfObject:sibling];
+    [self.fixtureChildren insertObject:v atIndex:at+1];
+    v.superview=self; v.nextResponder=self; v.window=self.window;
+}
+- (void)removeFromSuperview {
+    [self.superview.fixtureChildren removeObject:self];
+    self.superview=nil;
+}
 - (void)setNeedsLayout { ++_fixtureNeedsLayoutCalls; _fixtureNeedsLayout=YES; }
 - (void)layoutIfNeeded { if (_fixtureNeedsLayout) { _fixtureNeedsLayout=NO; [self layoutSubviews]; } }
 - (void)layoutSubviews { ++_fixtureLayoutCalls; }
@@ -210,7 +248,23 @@ static NSMutableDictionary *sFixturePathInfo;
 - (void)prepareForReuse { [super prepareForReuse]; }
 @end
 @implementation MMMultiMenuTableViewCell @end
-@implementation UIImageView @end
+@implementation UIImage
++ (UIImage *)imageWithContentsOfFile:(NSString *)path { (void)path; return nil; }
++ (UIImage *)imageWithCGImage:(CGImageRef)image scale:(CGFloat)scale
+                  orientation:(UIImageOrientation)orientation {
+    (void)image; (void)scale;
+    UIImage *out=[self new]; out->_fixtureOrientation=orientation; return out;
+}
+- (CGSize)size { return CGSizeZero; }
+- (UIImageOrientation)imageOrientation { return _fixtureOrientation; }
+- (CGImageRef)CGImage { return NULL; }
+@end
+@implementation UIImageView
+- (instancetype)initWithImage:(UIImage *)image {
+    if ((self=[self init])) self.image=image;
+    return self;
+}
+@end
 @implementation MMHeadImageView @end
 @implementation TLProfileImageView @end
 @implementation FakeHeadImageView @end

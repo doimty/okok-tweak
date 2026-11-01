@@ -51,7 +51,8 @@ def main():
     report.setdefault('compilations',[]).append({'unit':str(unit),'command':cmd,'exit':x.returncode,'stderr':x.stderr});save()
     if x.returncode:raise RuntimeError('COMPILE_FAILURE '+str(unit)+'\n'+x.stderr)
    dependency_obj=[]
-   for unit in [root/'src/WCKPolicy.c',root/'src/WCKSettings.m',root/'src/WCKSVGPalette.m']:
+   for unit in [root/'src/WCKPolicy.c',root/'src/WCKSettings.m',root/'src/WCKSVGPalette.m',
+                root/'src/WCKDecoration.m']:
     obj=td/(unit.name+'.o');compile_unit(unit,obj);dependency_obj.append(obj)
    variants={}
    for name in names:

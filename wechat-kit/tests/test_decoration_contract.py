@@ -113,6 +113,16 @@ class DecorationContract(unittest.TestCase):
         self.assertIn("decorationVisiblePages", self.settings)
         self.assertIn("(c >= '1' && c <= '5') || c == '@'", self.settings)
 
+    def test_corners_model_harness_links_the_module(self):
+        runner = (ROOT / "tests/run_corners_native.py").read_text()
+        self.assertIn("src/WCKDecoration.m", runner)
+        fake = (ROOT / "tests/fake-corners/UIKit/UIKit.h").read_text()
+        for surface in ("viewWithTag:", "aboveSubview:",
+                        "removeFromSuperview", "imageWithContentsOfFile:",
+                        "UIViewContentModeScaleAspectFill",
+                        "UIImageOrientationUp"):
+            self.assertIn(surface, fake)
+
     def test_no_sample_mechanisms_leak_in(self):
         for forbidden in ("NSUserDefaults", "MSHook", "9527", "HomeCell",
                           "method_exchangeImplementations"):

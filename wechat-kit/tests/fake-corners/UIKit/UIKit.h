@@ -15,6 +15,17 @@ typedef NSString *CALayerCornerCurve;
 typedef NS_ENUM(NSInteger, UIUserInterfaceStyle) {
     UIUserInterfaceStyleUnspecified = 0, UIUserInterfaceStyleLight = 1, UIUserInterfaceStyleDark = 2
 };
+typedef NS_ENUM(NSInteger, UIViewContentMode) {
+    UIViewContentModeScaleToFill = 0, UIViewContentModeScaleAspectFit = 1,
+    UIViewContentModeScaleAspectFill = 2, UIViewContentModeCenter = 4,
+    UIViewContentModeTop = 5
+};
+typedef NS_ENUM(NSInteger, UIImageOrientation) {
+    UIImageOrientationUp = 0, UIImageOrientationDown = 1,
+    UIImageOrientationLeft = 2, UIImageOrientationRight = 3,
+    UIImageOrientationUpMirrored = 4, UIImageOrientationDownMirrored = 5,
+    UIImageOrientationLeftMirrored = 6, UIImageOrientationRightMirrored = 7
+};
 @interface UITraitCollection : NSObject
 @property(nonatomic, readonly) UIUserInterfaceStyle userInterfaceStyle;
 @end
@@ -69,6 +80,11 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @interface UIView : UIResponder {
     CGRect _fixtureFrame;
     CGRect _fixtureBounds;
+    NSInteger _fixtureTag;
+    CGPoint _fixtureCenter;
+    CGAffineTransform _fixtureTransform;
+    NSInteger _fixtureContentMode;
+    BOOL _fixtureClipsToBounds;
 }
 @property(nonatomic) CGRect frame;
 @property(nonatomic) CGRect bounds;
@@ -80,6 +96,15 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @property(nonatomic, strong) UIColor *backgroundColor;
 @property(nonatomic, readonly) UITraitCollection *traitCollection;
 @property(nonatomic, readonly) NSArray<UIView *> *subviews;
+@property(nonatomic) NSInteger tag;
+@property(nonatomic) CGPoint center;
+@property(nonatomic) CGAffineTransform transform;
+@property(nonatomic) UIViewContentMode contentMode;
+@property(nonatomic) BOOL clipsToBounds;
+- (UIView *)viewWithTag:(NSInteger)tag;
+- (void)insertSubview:(UIView *)view atIndex:(NSInteger)index;
+- (void)insertSubview:(UIView *)view aboveSubview:(UIView *)sibling;
+- (void)removeFromSuperview;
 // These counters observe the original methods, not the replacement IMPs.
 @property(nonatomic) NSUInteger fixtureFrameCalls, fixtureLayoutCalls, fixtureReuseCalls;
 @property(nonatomic) NSUInteger fixtureNeedsLayoutCalls;
@@ -105,8 +130,23 @@ typedef NS_OPTIONS(NSUInteger, UIRectCorner) {
 @interface UIScrollView : UIView @end
 @interface UIButton : UIView @end
 
+// Fixture-only image surface for the decoration module: loading from disk
+// always returns nil here (no real image files in the model environment),
+// which exercises the module's no-image removal path without pixels.
+@interface UIImage : NSObject {
+    UIImageOrientation _fixtureOrientation;
+}
+@property(nonatomic, readonly) CGSize size;
+@property(nonatomic, readonly) UIImageOrientation imageOrientation;
+@property(nonatomic, readonly) CGImageRef CGImage;
++ (UIImage *)imageWithContentsOfFile:(NSString *)path;
++ (UIImage *)imageWithCGImage:(CGImageRef)image scale:(CGFloat)scale
+                  orientation:(UIImageOrientation)orientation;
+@end
+
 @interface UIImageView : UIView
 @property(nonatomic, strong) id image;
+- (instancetype)initWithImage:(UIImage *)image;
 @end
 
 @interface UITableViewCell : UIView
