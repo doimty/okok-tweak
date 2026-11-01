@@ -294,6 +294,7 @@ static void OKOKSweepAll(void) {
 
 static BOOL kOKOKSplashLayerHandled = NO;
 static NSTimeInterval kOKOKStartTime = 0;
+static NSUInteger kOKOKBaselineLayers = 0;   /* 启动 1s 时的 window 层数基线 */
 
 /*
  * 三道门控，缺一不可（宽松版本实测会黑屏）：
@@ -324,7 +325,7 @@ static void OKOKSplashLayerScanOnce(void) {
             /* ---- 诊断：把每一轮看到的层结构落盘，用于定位遮挡为何不命中 ---- */
             if (n >= 2) {
                 NSMutableString *diag = [NSMutableString string];
-                [diag appendFormat:@"t=%.2f n=%lu", elapsed, (unsigned long)n];
+                [diag appendFormat:@"t=%.2f n=%lu base=%lu", elapsed, (unsigned long)n, (unsigned long)kOKOKBaselineLayers];
                 NSUInteger lim = MIN(n, (NSUInteger)6);
                 for (NSUInteger k = 0; k < lim; k++) {
                     UIView *v = subs[k];
@@ -337,23 +338,38 @@ static void OKOKSplashLayerScanOnce(void) {
                 }
                 NSString *path = [NSTemporaryDirectory()
                                   stringByAppendingPathComponent:@"okok_splash_diag.txt"];
-                [[diag stringByAppendingString:@"\n"]
-                 writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+                /* 追加，不覆盖 —— 覆盖会把前面几轮的演变冲掉（踩过） */
+                NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
+                NSString *line = [diag stringByAppendingString:@"\n"];
+                if (fh) {
+                    [fh seekToEndOfFile];
+                    [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+                    [fh closeFile];
+                } else {
+                    [line writeToFile:path atomically:YES
+                             encoding:NSUTF8StringEncoding error:nil];
+                }
             }
 
             if (n < 2) continue;
 
-            NSString *c0 = NSStringFromClass([subs[0] class]);
-            NSString *c1 = NSStringFromClass([subs[1] class]);
-            if (![c0 isEqualToString:@"UITransitionView"]) continue;
-            if (![c1 isEqualToString:@"UIView"]) continue;
+            /*
+             * 基线差分判定：启动 1 秒时 window 原本有几层（kOKOKBaselineLayers），
+             * 之后**多出来的层**才是开屏广告层。
+             * 这样完全不依赖类名 —— 实测 MeiShu 那次第 2 层是匿名 UIView，
+             * 这次两层都是 UITransitionView，按类名判永远漏。
+             */
+            if (kOKOKBaselineLayers == 0) continue;
+            if (n <= kOKOKBaselineLayers) continue;
 
-            /* 保险：内容层必须可见 */
-            subs[0].hidden = NO;
-            subs[0].alpha = 1.0;
+            /* 保险：基线内的层（App 内容）必须保持可见 */
+            for (NSUInteger k = 0; k < kOKOKBaselineLayers; k++) {
+                subs[k].hidden = NO;
+                subs[k].alpha = 1.0;
+            }
 
-            /* 从第 1 层开始藏，第 0 层（App 内容）永远保留 */
-            for (NSUInteger k = 1; k < n; k++) {
+            /* 只藏基线之外的层 */
+            for (NSUInteger k = kOKOKBaselineLayers; k < n; k++) {
                 UIView *layer = subs[k];
                 layer.hidden = YES;
                 layer.alpha = 0.0;
@@ -456,9 +472,22 @@ static BOOL OKOKIsAdJumpURL(NSURL *url) {
        改成多轮，覆盖首页建好之后；每轮只是一次视图树遍历，开销很小。 */
     /* 开屏层遮挡：0.5s 起每 200ms 扫一次，最多 45 次（约 9.5 秒）
        实测广告层出现于 2.1~2.4 秒，这个窗口足够覆盖 */
-    for (int i = 0; i < 45; i++) {
+    /* 1.0 秒时记下 window 层数基线（此时开屏还没出现） */
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        NSArray<UIWindow *> *wins = [UIApplication sharedApplication].windows;
+#pragma clang diagnostic pop
+        for (UIWindow *w in wins) {
+            kOKOKBaselineLayers = MAX(kOKOKBaselineLayers, w.subviews.count);
+        }
+    });
+
+    /* 开屏层遮挡：1.5s 起每 150ms 扫一次，最多 55 次（约 9.7 秒） */
+    for (int i = 0; i < 55; i++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                     (int64_t)((0.5 + i * 0.2) * NSEC_PER_SEC)),
+                                     (int64_t)((1.5 + i * 0.15) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             OKOKSplashLayerScanOnce();
         });
