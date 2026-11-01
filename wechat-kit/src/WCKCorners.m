@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import "WCKRuntime.h"
 #import "WCKSettings.h"
+#import "WCKDecoration.h"
 #import "WCKSVGPalette.h"
 #import <math.h>
 
@@ -841,6 +842,9 @@ static void WCKCornerLayout(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP ori
     @try {
         original(cell, cmd);
         WCKCornerApplyStyle(cell);
+        // Decoration is independent of the corners switch and shares this
+        // layout pass, so it needs no second hook on the same selector.
+        WCKDecorationApplyToCell(cell);
     } @finally { --sCornerLayoutDepth; sCornerLayoutCell = previous; }
 }
 
@@ -853,6 +857,7 @@ static void WCKCornerReuse(UITableViewCell *cell, SEL cmd, WCKCornerVoidIMP orig
     @try {
         @try {
             WCKCornerState *state = WCKCornerGetState(cell, NO);
+            WCKDecorationRemoveFromCell(cell);
             WCKCornerRestoreStyle(cell, state);
             objc_setAssociatedObject(cell, &sCornerStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [sCornerCells removeObject:cell];
@@ -878,6 +883,7 @@ static void WCKCornerContentLayout(UIView *view, SEL cmd) {
     // WeChat re-writes the cell background while its content lays out; styling
     // here keeps the card applied even when the cell's own layout is bypassed.
     WCKCornerApplyStyle((UITableViewCell *)host);
+    WCKDecorationApplyToCell((UITableViewCell *)host);
 }
 
 // Row-height spacing is deliberately NOT hooked: asking the table for its row
@@ -992,6 +998,7 @@ void WCKInstallCorners(void) {
             object:WCKSettings.shared queue:NSOperationQueue.mainQueue
             usingBlock:^(__unused NSNotification *note) {
                 WCKCornerReloadConfig();
+                WCKDecorationInvalidateCache();
                 WCKRefreshCorners();
             }];
         WCKCornerReloadConfig();

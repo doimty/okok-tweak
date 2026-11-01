@@ -108,6 +108,24 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
             @[ @"profileCorner", @"资料卡", @"资料卡容器与资料页卡片。" ],
             @[ @"otherCorner", @"其他已识别控件", @"未能归入 WCR 专用路径的控件，默认关闭。" ]
         ];
+        [result addObject:WCKCornerHeaderRow(@"列表装饰图（独立）", @"不依赖全局卡片开关；只在下方页面画一张用户文件夹里的图。")];
+        [result addObject:WCKCornerSwitchRow(@"decorationEnabled", @"装饰图开关",
+            @"开启后按页面与文件夹画图；关闭或清空文件夹即清除已画的图。")];
+        [result addObject:@{ @"key": @"decorationFolder", @"title": @"装饰图文件夹",
+            @"help": @"放 浅色/深色 + @1x/@2x/@3x.png 的文件夹完整路径；留空不画。" }];
+        [result addObject:@{ @"key": @"decorationVisiblePages", @"title": @"装饰图可见页面",
+            @"help": @"数字位：1 会话、2 通讯录、3 发现、4 我、5 插件页；默认 1@2@3@4@5，留空也表示全部。" }];
+        [result addObject:@{ @"type": @"slider", @"key": @"decorationOffsetX",
+            @"title": @"装饰图横向偏移", @"min": @(-200), @"max": @200,
+            @"help": @"图片横向偏移，-200 到 200；正数向右。每次布局重新赋值，不会累积。" }];
+        [result addObject:@{ @"type": @"choice", @"key": @"decorationScale",
+            @"title": @"装饰图缩放", @"help": @"图片整体缩放；每次布局重新赋值，不会累积。",
+            @"items": @[ @{ @"value": @"0.5", @"title": @"0.5×" },
+                          @{ @"value": @"0.75", @"title": @"0.75×" },
+                          @{ @"value": @"1", @"title": @"1×" },
+                          @{ @"value": @"1.25", @"title": @"1.25×" },
+                          @{ @"value": @"1.5", @"title": @"1.5×" },
+                          @{ @"value": @"2", @"title": @"2×" } ] }];
         [result addObject:WCKCornerHeaderRow(@"组件圆角（全部独立）", @"每个开关和半径对应 WCR 的独立配置族。")];
         for (NSArray *family in families) {
             NSString *base = family[0];

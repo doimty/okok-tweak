@@ -167,7 +167,11 @@
             cell.accessoryView = toggle;
         } else if ([type isEqualToString:@"choice"]) {
             id raw = self.settings.snapshot[row[@"key"]];
-            NSString *value = [raw isKindOfClass:NSNumber.class] ?
+            NSString *value;
+            if ([raw isKindOfClass:NSNumber.class] &&
+                [row[@"key"] isEqualToString:@"decorationScale"])
+                value = [NSString stringWithFormat:@"%g", [raw doubleValue]];
+            else value = [raw isKindOfClass:NSNumber.class] ?
                 [NSString stringWithFormat:@"%ld", (long)[raw integerValue]] :
                 ([raw isKindOfClass:NSString.class] ? raw : @"");
             NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
@@ -253,6 +257,8 @@
                 id value = item[@"value"];
                 if ([row[@"key"] isEqualToString:@"globalCornerStrokeStyle"])
                     value = @([value integerValue]);
+                else if ([row[@"key"] isEqualToString:@"decorationScale"])
+                    value = @([value doubleValue]);
                 [self.settings setObject:value forKey:row[@"key"] error:&error];
                 [self.tableView reloadData];
             }]];
