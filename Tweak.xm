@@ -271,41 +271,31 @@ static void OKOKSweepAll(void) {
 
 %end
 /* ================================================================== */
-/* 开屏遮罩：只遮不拦                                                  */
+/* 开屏遮罩：按结构遮挡，不认类名                                       */
 /* ================================================================== */
 /*
- * 前面六种"拦展示/调 closeAd"的做法全部失败（卡启动画面 / abort / 冻屏）。
- * 这里换一个完全不碰状态机的做法：广告自己的倒计时照常跑，
- * 只把盖在最上面的那层开屏容器设为不可见。
+ * 决定性实测（两次不同 SDK）：
+ *   MeiShu 开屏：window 第 2 层里是 MSSplashScreenView ...
+ *   BeiZi  开屏：window 第 2 层里是 BeiZiImageView/BeiZiSkipView ...
+ *   两层的**顶层都是匿名 UIView**，按类名永远抓不全。
+ *   但结构完全一致：
+ *       window.subviews[0] = UITransitionView  ← App 内容，必须保留
+ *       window.subviews[1] = 广告层
+ *   出现于启动后 ~2.1-2.4s，消失于 ~8s。
  *
- * 安全性：
- *   · 只在类名精确匹配到开屏 SDK 的视图时动作，匹配不到就什么都不做；
- *   · 从外部定时器轮询，不在视图自己的 -didMoveToSuperview 里改（会无限递归）；
- *   · 隐藏的是「最上层非 window 祖先」，避免只隐藏广告层导致底下仍是空屏。
+ * 所以只按"启动后 window 多出来的第 2 层及以后"遮挡，保留第 0 层。
+ * 广告自己的倒计时照常跑完，splashDidClose / closeAd 正常触发，
+ * App 启动流程完全不受影响。
  *
- * 注意：该做法尚未在"真的拉到广告"的一次启动里验证过 —— 开屏有频次限制，
- * 连续冷启动会一直不填充。若长时间观察仍未生效，说明命中的类名不对，
- * 需要重新在广告出现的那一刻抓一次类名。
+ * ⚠️ 绝不能 hide children[0] —— 实测会把 App 内容一起藏掉，直接黑屏。
+ *
+ * 已验证：2.09s 命中并隐藏，5s 时首页正常显示、无广告、无黑屏。
  */
 
-static BOOL kOKOKSplashHiddenOnce = NO;
+static BOOL kOKOKSplashLayerHandled = NO;
 
-/*
- * 实测抓到的真实类名（启动后 2.4s~6.7s 出现，window 的第二层 UITransitionView 上）：
- *     MSSplashScreenView / MSSplashMediaView / MeiShuSplashAdBottomView / LaunchAdBottomView
- * 之前盯的 ATNativeMixSplashView 是错的 —— 一次都没命中过。
- *
- * 这里只认容器本体 MSSplashScreenView 和素材层 MSSplashMediaView。
- * 刻意不包含底部栏类：它们和 App 内容同层，动它们会连带影响内容层。
- */
-static BOOL OKOKIsSplashClass(NSString *name) {
-    return [name isEqualToString:@"MSSplashScreenView"]
-        || [name isEqualToString:@"MSSplashMediaView"];
-}
-
-
-static void OKOKSplashScanOnce(void) {
-    if (kOKOKSplashHiddenOnce) return;
+static void OKOKSplashLayerScanOnce(void) {
+    if (kOKOKSplashLayerHandled) return;
     if (!OKOKVersionOK()) return;
 
     @try {
@@ -314,25 +304,19 @@ static void OKOKSplashScanOnce(void) {
         NSArray<UIWindow *> *wins = [UIApplication sharedApplication].windows;
 #pragma clang diagnostic pop
 
-        NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithArray:wins];
-        int guard = 0;
+        for (UIWindow *win in wins) {
+            NSArray<UIView *> *subs = win.subviews;
+            NSUInteger n = subs.count;
+            if (n < 2) continue;      /* 只有内容层，还没出广告 */
 
-        while (stack.count && guard++ < 8000) {
-            UIView *v = [stack lastObject];
-            [stack removeLastObject];
-            if (!v) continue;
-
-            NSString *name = NSStringFromClass([v class]);
-            if (OKOKIsSplashClass(name)) {
-                /* 只隐藏它自己。绝不碰祖先 ——
-                   实测藏祖先会把 App 内容层一起藏掉，直接黑屏。 */
-                v.hidden = YES;
-                v.alpha = 0.0;
-                kOKOKSplashHiddenOnce = YES;
-                return;
+            /* 从第 1 层开始藏，第 0 层（App 内容）永远保留 */
+            for (NSUInteger k = 1; k < n; k++) {
+                UIView *layer = subs[k];
+                layer.hidden = YES;
+                layer.alpha = 0.0;
             }
-
-            [stack addObjectsFromArray:v.subviews];
+            kOKOKSplashLayerHandled = YES;
+            return;
         }
     } @catch (NSException *e) {
     }
@@ -347,12 +331,13 @@ static void OKOKSplashScanOnce(void) {
     /* 不在启动路径上干活。
        实测这台设备从冷启动到首页可用约 9-10 秒，所以只扫 2.5s/6s 会全部落空。
        改成多轮，覆盖首页建好之后；每轮只是一次视图树遍历，开销很小。 */
-    /* 开屏遮罩：0.5s 起每 200ms 扫一次，最多 40 次（约 8.5 秒，覆盖广告出现窗口） */
-    for (int i = 0; i < 40; i++) {
+    /* 开屏层遮挡：0.5s 起每 200ms 扫一次，最多 45 次（约 9.5 秒）
+       实测广告层出现于 2.1~2.4 秒，这个窗口足够覆盖 */
+    for (int i = 0; i < 45; i++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
                                      (int64_t)((0.5 + i * 0.2) * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            OKOKSplashScanOnce();
+            OKOKSplashLayerScanOnce();
         });
     }
 
