@@ -90,6 +90,14 @@ class SettingsStyleContract(unittest.TestCase):
         self.assertIn("heroSubtitleLabel", self.detail)
         self.assertIn("已保存开启，状态未确认", self.detail)
 
+    def test_inactive_rows_are_dimmed(self):
+        # A finished page does not paint dead rows as live: unimplemented
+        # rows get a gray glyph, and when the master switch is off the
+        # implemented rows dim too.
+        self.assertIn("systemGrayColor", self.vm)
+        self.assertIn("tertiaryLabelColor", self.vm)
+        self.assertIn('if (!row[@"key"])', self.vm)
+
     def test_page_and_card_backgrounds(self):
         # Dynamic page/card colours, same values on both levels.
         for source in (self.vm, self.detail):

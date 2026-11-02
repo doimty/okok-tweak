@@ -386,7 +386,21 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         NSDictionary<NSString *, id> *row = WCKModuleRows()[path.row];
         NSString *symbol = [row[@"icon"] isKindOfClass:NSString.class] ? row[@"icon"] : nil;
         cell.imageView.image = WCKAccentImage(symbol);
-        cell.imageView.tintColor = WCKAccentColor();
+        // A finished page does not paint dead rows as live. Unimplemented
+        // rows get a gray glyph; when the master switch is off, implemented
+        // rows dim too, so the page reads as off instead of fourteen green
+        // icons over fourteen identical subtitles. Colors are reset on
+        // every row because cells are reused.
+        if (!row[@"key"]) {
+            cell.imageView.tintColor = UIColor.systemGrayColor;
+            cell.textLabel.textColor = UIColor.labelColor;
+        } else if (![self.settings boolForKey:@"enabled"]) {
+            cell.imageView.tintColor = UIColor.systemGrayColor;
+            cell.textLabel.textColor = UIColor.tertiaryLabelColor;
+        } else {
+            cell.imageView.tintColor = WCKAccentColor();
+            cell.textLabel.textColor = UIColor.labelColor;
+        }
         cell.textLabel.text = row[@"title"];
         cell.detailTextLabel.text = [self shortStatusForRow:row];
         if (row[@"key"]) {
