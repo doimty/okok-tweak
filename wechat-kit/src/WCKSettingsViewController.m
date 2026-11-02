@@ -549,9 +549,14 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         detail = detail.length ? [detail stringByAppendingFormat:@"\n\n当前状态：%@", status]
                                : [@"当前状态：" stringByAppendingString:status];
     }
-    return [[WCKFeatureDetailViewController alloc] initWithSettings:self.settings
+    WCKFeatureDetailViewController *detailPage = [[WCKFeatureDetailViewController alloc]
+        initWithSettings:self.settings
         featureID:featureID settingsKey:row[@"key"] title:row[@"title"]
         detail:detail extraRows:extra];
+    // Second-level pages share the first-level hero language: same icon tile.
+    detailPage.heroIconName = row[@"icon"];
+    detailPage.heroTintColor = row[@"tint"];
+    return detailPage;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {

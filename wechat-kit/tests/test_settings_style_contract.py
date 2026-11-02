@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Source-contract checks for the LuckyDam-style settings home.
+"""Source-contract checks for the LuckyDam-style settings pages.
 
-Only the main page is restyled: a header card, pastel icon tiles and
-one-line subtitles. Behaviour is unchanged: the full diagnostic text
-moves to the feature detail page, and no switch is added or removed.
+The main page and every second-level detail page share one language: a
+header card, pastel icon tiles and one-line subtitles. Behaviour is
+unchanged: the full diagnostic text moves to the feature detail page,
+and no switch is added or removed.
 These checks do not execute UIKit.
 """
 import pathlib
@@ -18,6 +19,7 @@ class SettingsStyleContract(unittest.TestCase):
     def setUpClass(cls):
         cls.vm = (ROOT / "src/WCKSettingsViewController.m").read_text()
         cls.detail = (ROOT / "src/WCKFeatureDetailViewController.m").read_text()
+        cls.detail_h = (ROOT / "src/WCKFeatureDetailViewController.h").read_text()
 
     def test_hero_header_card(self):
         self.assertIn("WCKSettingsHeroView", self.vm)
@@ -59,6 +61,19 @@ class SettingsStyleContract(unittest.TestCase):
         # The list shows one line; the detail page carries the full text.
         self.assertIn("当前状态：", self.vm)
         self.assertIn("detailPageForFeature", self.vm)
+
+    def test_detail_pages_share_the_hero(self):
+        self.assertIn("WCKDetailHeroView", self.detail)
+        self.assertIn("WCKDetailTileImage", self.detail)
+        self.assertIn("tableHeaderView", self.detail)
+        self.assertIn("heroIconName", self.detail_h)
+        self.assertIn("heroTintColor", self.detail_h)
+        # The first-level row hands its own icon and tint to the detail page.
+        self.assertIn("detailPage.heroIconName", self.vm)
+        self.assertIn("detailPage.heroTintColor", self.vm)
+        # The hero subtitle tracks the same one-line status as the switch row.
+        self.assertIn("heroSubtitleLabel", self.detail)
+        self.assertIn("已保存开启，状态未确认", self.detail)
 
     def test_no_new_forbidden_apis(self):
         for forbidden in ("NSLog(", "NSUserDefaults", "method_exchangeImplementations"):
