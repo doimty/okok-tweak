@@ -6,6 +6,8 @@ on:
     branches:
       - fix/wechatkit-feature-paths-alpha5-20261021
       - fix/wechatkit-alpha6-svg-provenance-20261022
+      # Temporary: let this toplimit branch compile on push. Drop before merge.
+      - feat/wechatkit-toplimit-20261102
     paths:
       - 'wechat-kit/**'
       - '.github/workflows/build-wechatkit.yml'
