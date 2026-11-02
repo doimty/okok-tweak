@@ -57,6 +57,26 @@ static UIImage *WCKAccentImage(NSString *symbolName) {
     return [symbol imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
+// Page and card backgrounds in the reference manner, as dynamic colours:
+// near-black page with slightly lighter cards in dark mode, near-white page
+// with white cards in light mode. The values match the reference look;
+// the provider code is WCK's own.
+static UIColor *WCKPageBackgroundColor(void) {
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *trait) {
+        return trait.userInterfaceStyle == UIUserInterfaceStyleDark ?
+            [UIColor colorWithRed:0.055 green:0.064 blue:0.075 alpha:1.0] :
+            [UIColor colorWithRed:0.951 green:0.965 blue:0.966 alpha:1.0];
+    }];
+}
+
+static UIColor *WCKCardBackgroundColor(void) {
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *trait) {
+        return trait.userInterfaceStyle == UIUserInterfaceStyleDark ?
+            [UIColor colorWithRed:0.105 green:0.119 blue:0.13 alpha:1.0] :
+            UIColor.whiteColor;
+    }];
+}
+
 static NSDictionary<NSString *, id> *WCKCornerSwitchRow(NSString *key, NSString *title, NSString *help) {
     return @{ @"type": @"switch", @"key": key, @"title": title, @"help": help };
 }
@@ -199,6 +219,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     self.tableView.estimatedRowHeight = 72;
     // Cards with hairlines between rows, as in the reference page: the
     // default separator style draws them inside each card only.
+    self.tableView.backgroundColor = WCKPageBackgroundColor();
     self.tableView.sectionHeaderTopPadding = 6;
     self.edgesForExtendedLayout = UIRectEdgeNone;
     self.extendedLayoutIncludesOpaqueBars = NO;
@@ -206,7 +227,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     // Per-item appearances: never alter the host navigation bar or other plugin pages.
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
-    appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;
+    appearance.backgroundColor = WCKPageBackgroundColor();
     self.navigationItem.standardAppearance = appearance;
     self.navigationItem.scrollEdgeAppearance = appearance;
     self.navigationItem.compactAppearance = appearance;
@@ -335,6 +356,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
     cell.detailTextLabel.font = [UIFont systemFontOfSize:13];
     cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
+    cell.backgroundColor = WCKCardBackgroundColor();
     cell.textLabel.enabled = YES;
     cell.detailTextLabel.enabled = YES;
     cell.accessoryView = nil;

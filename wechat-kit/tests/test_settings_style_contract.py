@@ -90,6 +90,16 @@ class SettingsStyleContract(unittest.TestCase):
         self.assertIn("heroSubtitleLabel", self.detail)
         self.assertIn("已保存开启，状态未确认", self.detail)
 
+    def test_page_and_card_backgrounds(self):
+        # Dynamic page/card colours, same values on both levels.
+        for source in (self.vm, self.detail):
+            self.assertIn("WCKPageBackgroundColor", source)
+            self.assertIn("WCKCardBackgroundColor", source)
+            self.assertIn("tableView.backgroundColor", source)
+            self.assertIn("cell.backgroundColor", source)
+        self.assertIn("0.055", self.vm)
+        self.assertIn("0.951", self.vm)
+
     def test_no_new_forbidden_apis(self):
         for forbidden in ("NSLog(", "NSUserDefaults", "method_exchangeImplementations"):
             self.assertNotIn(forbidden, self.vm)

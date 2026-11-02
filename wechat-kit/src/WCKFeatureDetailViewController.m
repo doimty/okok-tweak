@@ -12,6 +12,25 @@
 @property (nonatomic, strong) UILabel *heroSubtitleLabel;
 @end
 
+// Page and card backgrounds, same values as the home page: near-black page
+// with slightly lighter cards in dark mode, near-white page with white cards
+// in light mode.
+static UIColor *WCKPageBackgroundColor(void) {
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *trait) {
+        return trait.userInterfaceStyle == UIUserInterfaceStyleDark ?
+            [UIColor colorWithRed:0.055 green:0.064 blue:0.075 alpha:1.0] :
+            [UIColor colorWithRed:0.951 green:0.965 blue:0.966 alpha:1.0];
+    }];
+}
+
+static UIColor *WCKCardBackgroundColor(void) {
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *trait) {
+        return trait.userInterfaceStyle == UIUserInterfaceStyleDark ?
+            [UIColor colorWithRed:0.105 green:0.119 blue:0.13 alpha:1.0] :
+            UIColor.whiteColor;
+    }];
+}
+
 // Bare accent glyph, no tile: the reference home language, kept on detail pages
 // so both levels still share one look.
 static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString *fallback, CGFloat size) {
@@ -95,9 +114,10 @@ static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 52;
     // Same card language as the home page: hairlines between rows.
+    self.tableView.backgroundColor = WCKPageBackgroundColor();
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
-    appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;
+    appearance.backgroundColor = WCKPageBackgroundColor();
     self.navigationItem.standardAppearance = appearance;
     self.navigationItem.scrollEdgeAppearance = appearance;
     self.navigationItem.compactAppearance = appearance;
@@ -176,6 +196,7 @@ static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"WCKFeatureDetail"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1
                                               reuseIdentifier:@"WCKFeatureDetail"];
+    cell.backgroundColor = WCKCardBackgroundColor();
     cell.textLabel.numberOfLines = 0;
     cell.detailTextLabel.numberOfLines = 0;
     cell.accessoryView = nil;
