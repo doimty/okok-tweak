@@ -60,6 +60,13 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
         d[@"globalCornerCustomExcludedVCClassNames"] = @"";
         d[@"mainFramePinnedTopSpacing"] = @8.0;
         d[@"mainFrameBelowPinnedSpacing"] = @8.0;
+        // List decoration images: off and folder-less by default, so nothing
+        // draws until the user explicitly picks a folder.
+        d[@"decorationEnabled"] = @NO;
+        d[@"decorationFolder"] = @"";
+        d[@"decorationVisiblePages"] = @"1@2@3@4@5";
+        d[@"decorationOffsetX"] = @0;
+        d[@"decorationScale"] = @1.0;
         defaults = [d copy];
     });
     return defaults;
@@ -96,6 +103,16 @@ static id WCKValidatedValue(NSString *key, id value) {
             if (!isfinite(alpha)) return nil;
             return @(MIN(1.0, MAX(0.2, alpha)));
         }
+        // Decoration geometry has its own ranges: a negative X offset and a
+        // fractional scale cannot go through the 0-based corner clamp below.
+        if ([key isEqualToString:@"decorationOffsetX"] ||
+            [key isEqualToString:@"decorationScale"]) {
+            if (isBoolean) return nil;
+            double number = [value doubleValue];
+            if (!isfinite(number)) return nil;
+            if ([key isEqualToString:@"decorationOffsetX"]) return @(MIN(200.0, MAX(-200.0, number)));
+            return @(MIN(2.0, MAX(0.5, number)));
+        }
         BOOL numericCorner = [key hasSuffix:@"Radius"] || [key hasSuffix:@"Margin"] ||
             [key hasSuffix:@"Spacing"] || [key hasSuffix:@"BorderSize"] ||
             [key isEqualToString:@"globalCornerStroke"] ||
@@ -121,7 +138,9 @@ static id WCKValidatedValue(NSString *key, id value) {
     if (![value isKindOfClass:NSString.class]) return nil;
     NSString *text = [value copy];
     BOOL longText = [key isEqualToString:@"momentsFormat"] ||
-        [key isEqualToString:@"globalCornerCustomExcludedVCClassNames"];
+        [key isEqualToString:@"globalCornerCustomExcludedVCClassNames"] ||
+        [key isEqualToString:@"decorationFolder"] ||
+        [key isEqualToString:@"decorationVisiblePages"];
     NSUInteger limit = [key isEqualToString:@"momentsFormat"] ? WCKMaximumFormatLength :
         (longText || [key isEqualToString:@"svgInclude"] || [key isEqualToString:@"svgExclude"] ?
          WCKMaximumCSVLength : 7);
@@ -142,6 +161,15 @@ static id WCKValidatedValue(NSString *key, id value) {
     }
     if ([key isEqualToString:@"momentsFormat"] &&
         [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length == 0) return nil;
+    if ([key isEqualToString:@"decorationVisiblePages"]) {
+        // Digits 1-5 and '@' only; empty means the default (all pages).
+        if (text.length > 32) return nil;
+        for (NSUInteger i = 0; i < text.length; i++) {
+            unichar c = [text characterAtIndex:i];
+            if (!((c >= '1' && c <= '5') || c == '@')) return nil;
+        }
+        return text;
+    }
     return text;
 }
 

@@ -8,6 +8,68 @@
 @property (nonatomic, copy) NSString *detailText;
 @property (nonatomic, copy) NSArray<NSDictionary<NSString *, id> *> *extraRows;
 @property (nonatomic, strong) UISwitch *toggle;
+@property (nonatomic, strong) UIView *heroView;
+@property (nonatomic, strong) UILabel *heroSubtitleLabel;
+@end
+
+// Pastel icon tile, same renderer as the first-level hero: tinted rounded
+// square, SF Symbol aspect-fit inside, first character as fallback.
+static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString *fallback, CGFloat size) {
+    tint = tint ?: UIColor.systemGrayColor;
+    fallback = fallback.length ? fallback : @"W";
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(size, size) format:format];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        UIBezierPath *bg = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size, size) cornerRadius:size * 0.28];
+        [[tint colorWithAlphaComponent:0.16] setFill];
+        [bg fill];
+        UIImage *symbol = [UIImage systemImageNamed:symbolName];
+        if (symbol) {
+            UIImage *tinted = [symbol imageWithTintColor:tint];
+            CGFloat box = size * 0.52;
+            [tinted drawInRect:CGRectMake((size - box) / 2.0, (size - box) / 2.0, box, box)];
+        } else {
+            NSString *ch = [fallback substringToIndex:1];
+            NSDictionary *attrs = @{ NSFontAttributeName: [UIFont systemFontOfSize:size * 0.42 weight:UIFontWeightSemibold], NSForegroundColorAttributeName: tint };
+            CGSize textSize = [ch sizeWithAttributes:attrs];
+            [ch drawAtPoint:CGPointMake((size - textSize.width) / 2.0, (size - textSize.height) / 2.0) withAttributes:attrs];
+        }
+    }];
+}
+
+@interface WCKDetailHeroView : UIView
+@property (nonatomic, strong) UIImageView *tileView;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UILabel *subtitleLabel;
+- (instancetype)initWithIcon:(NSString *)iconName tint:(UIColor *)tint title:(NSString *)title fallback:(NSString *)fallback;
+@end
+
+@implementation WCKDetailHeroView
+- (instancetype)initWithIcon:(NSString *)iconName tint:(UIColor *)tint title:(NSString *)title fallback:(NSString *)fallback {
+    self = [super initWithFrame:CGRectMake(0, 0, 0, 96)];
+    if (self) {
+        _tileView = [[UIImageView alloc] initWithImage:WCKDetailTileImage(iconName, tint, fallback, 56)];
+        [self addSubview:_tileView];
+        _titleLabel = [UILabel new];
+        _titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+        _titleLabel.textColor = UIColor.labelColor;
+        _titleLabel.text = title;
+        [self addSubview:_titleLabel];
+        _subtitleLabel = [UILabel new];
+        _subtitleLabel.font = [UIFont systemFontOfSize:13];
+        _subtitleLabel.textColor = UIColor.secondaryLabelColor;
+        [self addSubview:_subtitleLabel];
+    }
+    return self;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = self.bounds.size.width;
+    self.tileView.frame = CGRectMake(20, 20, 56, 56);
+    CGFloat textX = 92, textWidth = MAX(0, width - textX - 20);
+    self.titleLabel.frame = CGRectMake(textX, 24, textWidth, 24);
+    self.subtitleLabel.frame = CGRectMake(textX, 52, textWidth, 20);
+}
 @end
 
 @implementation WCKFeatureDetailViewController
@@ -34,6 +96,7 @@
     [super viewDidLoad];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 52;
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
     appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;
@@ -69,10 +132,24 @@
     BOOL stored = [self.settings boolForKey:self.settingsKey];
     self.toggle.on = stored;
     self.toggle.enabled = [self canEditFeature];
+    if (self.heroSubtitleLabel) {
+        BOOL ready = [self featureReady];
+        self.heroSubtitleLabel.text = ready ? (stored ? @"已开启" : @"已关闭")
+            : (stored ? @"已保存开启，状态未确认" : @"Hook 状态未确认");
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    if (!self.heroView && self.heroIconName.length) {
+        WCKDetailHeroView *hero = [[WCKDetailHeroView alloc] initWithIcon:self.heroIconName
+            tint:self.heroTintColor title:self.title fallback:self.title];
+        hero.frame = CGRectMake(0, 0, self.tableView.bounds.size.width, 96);
+        hero.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        self.heroView = hero;
+        self.heroSubtitleLabel = hero.subtitleLabel;
+        self.tableView.tableHeaderView = hero;
+    }
     [self refreshToggle];
     [self.tableView reloadData];
 }
@@ -110,6 +187,7 @@
     cell.detailTextLabel.enabled = YES;
 
     if (path.section == 0) {
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
         cell.textLabel.text = @"启用";
         BOOL ready = [self featureReady];
         BOOL stored = [self.settings boolForKey:self.settingsKey];
@@ -132,7 +210,9 @@
         NSString *type = row[@"type"];
         cell.textLabel.text = row[@"title"];
         cell.textLabel.textColor = UIColor.labelColor;
-        cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:15];
+        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
         BOOL editable = YES;
         cell.textLabel.enabled = YES;
         if ([type isEqualToString:@"header"]) {
@@ -167,7 +247,11 @@
             cell.accessoryView = toggle;
         } else if ([type isEqualToString:@"choice"]) {
             id raw = self.settings.snapshot[row[@"key"]];
-            NSString *value = [raw isKindOfClass:NSNumber.class] ?
+            NSString *value;
+            if ([raw isKindOfClass:NSNumber.class] &&
+                [row[@"key"] isEqualToString:@"decorationScale"])
+                value = [NSString stringWithFormat:@"%g", [raw doubleValue]];
+            else value = [raw isKindOfClass:NSNumber.class] ?
                 [NSString stringWithFormat:@"%ld", (long)[raw integerValue]] :
                 ([raw isKindOfClass:NSString.class] ? raw : @"");
             NSArray<NSDictionary<NSString *, NSString *> *> *items = row[@"items"];
@@ -253,6 +337,8 @@
                 id value = item[@"value"];
                 if ([row[@"key"] isEqualToString:@"globalCornerStrokeStyle"])
                     value = @([value integerValue]);
+                else if ([row[@"key"] isEqualToString:@"decorationScale"])
+                    value = @([value doubleValue]);
                 [self.settings setObject:value forKey:row[@"key"] error:&error];
                 [self.tableView reloadData];
             }]];

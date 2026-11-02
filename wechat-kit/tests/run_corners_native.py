@@ -5,7 +5,7 @@ This is behavioral model execution, NOT real UIKit or WeChat. On non-Darwin,
 """
 import argparse,hashlib,json,os,re,subprocess,sys,tempfile
 from pathlib import Path
-CASES=['geometry','isolation','restore','refresh','lifetime','abi']
+CASES=['geometry','isolation','restore','refresh','lifetime','abi','late-install','late-unverified']
 VARIANTS=['baseline','baseline-overrides','disabled-feature','refresh-noop','strong-registry']
 def main():
  p=argparse.ArgumentParser(description=__doc__)
@@ -51,7 +51,8 @@ def main():
     report.setdefault('compilations',[]).append({'unit':str(unit),'command':cmd,'exit':x.returncode,'stderr':x.stderr});save()
     if x.returncode:raise RuntimeError('COMPILE_FAILURE '+str(unit)+'\n'+x.stderr)
    dependency_obj=[]
-   for unit in [root/'src/WCKPolicy.c',root/'src/WCKSettings.m',root/'src/WCKSVGPalette.m']:
+   for unit in [root/'src/WCKPolicy.c',root/'src/WCKSettings.m',root/'src/WCKSVGPalette.m',
+                root/'src/WCKDecoration.m']:
     obj=td/(unit.name+'.o');compile_unit(unit,obj);dependency_obj.append(obj)
    variants={}
    for name in names:
