@@ -34,6 +34,7 @@
     [super viewDidLoad];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 52;
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
     appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;
@@ -110,6 +111,7 @@
     cell.detailTextLabel.enabled = YES;
 
     if (path.section == 0) {
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
         cell.textLabel.text = @"启用";
         BOOL ready = [self featureReady];
         BOOL stored = [self.settings boolForKey:self.settingsKey];
@@ -132,7 +134,9 @@
         NSString *type = row[@"type"];
         cell.textLabel.text = row[@"title"];
         cell.textLabel.textColor = UIColor.labelColor;
-        cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        cell.textLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:15];
+        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
         BOOL editable = YES;
         cell.textLabel.enabled = YES;
         if ([type isEqualToString:@"header"]) {
