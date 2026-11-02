@@ -12,21 +12,19 @@
 @property (nonatomic, strong) UILabel *heroSubtitleLabel;
 @end
 
-// Pastel icon tile, same renderer as the first-level hero: tinted rounded
-// square, SF Symbol aspect-fit inside, first character as fallback.
+// Bare accent glyph, no tile: the reference home language, kept on detail pages
+// so both levels still share one look.
 static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString *fallback, CGFloat size) {
     tint = tint ?: UIColor.systemGrayColor;
     fallback = fallback.length ? fallback : @"W";
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(size, size) format:format];
     return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        UIBezierPath *bg = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size, size) cornerRadius:size * 0.28];
-        [[tint colorWithAlphaComponent:0.16] setFill];
-        [bg fill];
+        (void)context;
         UIImage *symbol = [UIImage systemImageNamed:symbolName];
         if (symbol) {
             UIImage *tinted = [symbol imageWithTintColor:tint];
-            CGFloat box = size * 0.52;
+            CGFloat box = size * 0.64;
             [tinted drawInRect:CGRectMake((size - box) / 2.0, (size - box) / 2.0, box, box)];
         } else {
             NSString *ch = [fallback substringToIndex:1];
@@ -96,7 +94,7 @@ static UIImage *WCKDetailTileImage(NSString *symbolName, UIColor *tint, NSString
     [super viewDidLoad];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 52;
-    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+    // Same card language as the home page: hairlines between rows.
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
     appearance.backgroundColor = UIColor.systemGroupedBackgroundColor;

@@ -11,137 +11,51 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKModuleRows(void) {
     dispatch_once(&once, ^{
         rows = @[
             @{@"id": @"toolbar", @"title": @"工具栏位",
-              @"icon": @"square.grid.2x2", @"tint": UIColor.systemPurpleColor},
+              @"icon": @"square.grid.2x2"},
             @{@"id": @"keyboardSwipe", @"title": @"聊天底部滑动展开键盘", @"key": @"keyboardSwipe",
-              @"icon": @"keyboard", @"tint": UIColor.systemBlueColor},
+              @"icon": @"keyboard", @"desc": @"滑到底部继续上滑展开键盘"},
             @{@"id": @"friendRank", @"title": @"群内好友时间榜",
-              @"icon": @"chart.bar", @"tint": UIColor.systemOrangeColor},
+              @"icon": @"chart.bar"},
             @{@"id": @"readAll", @"title": @"底栏微信长按一键已读", @"key": @"readAll",
-              @"icon": @"checkmark.circle", @"tint": UIColor.systemGreenColor},
+              @"icon": @"checkmark.circle", @"desc": @"长按底栏一键已读"},
             @{@"id": @"cleanUI", @"title": @"界面净化",
-              @"icon": @"sparkles", @"tint": UIColor.systemTealColor},
+              @"icon": @"sparkles"},
             @{@"id": @"corners", @"title": @"全局圆角", @"key": @"corners",
-              @"icon": @"square.on.square", @"tint": UIColor.systemIndigoColor},
+              @"icon": @"square.on.square", @"desc": @"页面卡片与组件圆角"},
             @{@"id": @"momentsTime", @"title": @"朋友圈详细时间", @"key": @"momentsTime",
-              @"icon": @"clock", @"tint": UIColor.systemPinkColor},
+              @"icon": @"clock", @"desc": @"朋友圈详细时间格式"},
             @{@"id": @"albumSheet", @"title": @"聊天页半屏相册", @"key": @"albumSheet",
-              @"icon": @"photo.on.rectangle", @"tint": UIColor.systemCyanColor},
+              @"icon": @"photo.on.rectangle", @"desc": @"聊天页半屏相册"},
             @{@"id": @"noHotUpdate", @"title": @"禁止热更新",
-              @"icon": @"shield.slash", @"tint": UIColor.systemRedColor},
+              @"icon": @"shield.slash"},
             @{@"id": @"topLabels", @"title": @"专属命名（顶部标签自定义）",
-              @"icon": @"tag", @"tint": UIColor.systemBrownColor},
+              @"icon": @"tag"},
             @{@"id": @"svgTint", @"title": @"Svg图标改色", @"key": @"svgTint",
-              @"icon": @"paintpalette", @"tint": UIColor.systemPurpleColor},
+              @"icon": @"paintpalette", @"desc": @"Svg 图标改色"},
             @{@"id": @"repeatLabel", @"title": @"消息复读标签", @"note": @"标签含义待确认",
-              @"icon": @"repeat", @"tint": UIColor.systemBlueColor},
+              @"icon": @"repeat"},
             @{@"id": @"groupLabels", @"title": @"群聊标签", @"note": @"标签含义待确认",
-              @"icon": @"person.2", @"tint": UIColor.systemGreenColor},
+              @"icon": @"person.2"},
             @{@"id": @"topLimit", @"title": @"置顶数量限制", @"key": @"topLimitEnabled",
-              @"icon": @"pin.fill", @"tint": UIColor.systemOrangeColor}
+              @"icon": @"pin.fill", @"desc": @"限制首页置顶会话数量"}
         ];
     });
     return rows;
 }
 
-// Pastel tile with a tinted glyph, drawn by WCK itself: no third-party asset
-// is copied in. An unknown symbol falls back to the row's first character.
-static UIImage *WCKTileImage(NSString *symbolName, UIColor *tint, NSString *fallback, CGFloat size) {
-    CGSize tile = CGSizeMake(size, size);
-    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
-    format.opaque = NO;
-    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:tile format:format];
-    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
-        (void)context;
-        CGRect bounds = CGRectMake(0, 0, size, size);
-        UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:bounds cornerRadius:size * 0.28];
-        [[tint colorWithAlphaComponent:0.16] setFill];
-        [path fill];
-        UIImage *symbol = symbolName.length ? [UIImage systemImageNamed:symbolName] : nil;
-        if (symbol) {
-            UIImage *tinted = [symbol imageWithTintColor:tint];
-            CGFloat box = size * 0.52;
-            CGFloat scale = MIN(box / symbol.size.width, box / symbol.size.height);
-            CGSize draw = CGSizeMake(symbol.size.width * scale, symbol.size.height * scale);
-            [tinted drawInRect:CGRectMake((size - draw.width) / 2, (size - draw.height) / 2,
-                draw.width, draw.height)];
-        } else if (fallback.length) {
-            NSString *glyph = [fallback substringToIndex:1];
-            NSDictionary *attrs = @{ NSFontAttributeName:
-                [UIFont systemFontOfSize:size * 0.44 weight:UIFontWeightSemibold],
-                NSForegroundColorAttributeName: tint };
-            CGSize text = [glyph sizeWithAttributes:attrs];
-            [glyph drawAtPoint:CGPointMake((size - text.width) / 2, (size - text.height) / 2)
-                withAttributes:attrs];
-        }
-    }];
+// One accent colour for the whole settings language, in the reference manner: a
+// single vivid green for every row glyph and every switch, not one tint per
+// module. The value is WCK's own token, not the reference tweak's.
+static UIColor *WCKAccentColor(void) {
+    return [UIColor colorWithRed:0.0 green:0.83 blue:0.33 alpha:1.0];
 }
 
-// Header card in the LuckyDam manner: icon tile, name, one-line subtitle and
-// a status pill. It sits on the page background, not inside a white card.
-@interface WCKSettingsHeroView : UIView
-@property (nonatomic, strong) UILabel *pillLabel;
-- (void)setPillText:(NSString *)text highlighted:(BOOL)highlighted;
-@end
-
-@implementation WCKSettingsHeroView {
-    UIImageView *_iconView;
-    UILabel *_nameLabel;
-    UILabel *_subtitleLabel;
+// Bare accent glyph, no tile behind it. An unknown symbol yields nil and the
+// row simply shows no icon; every shipped row uses a valid SF Symbol.
+static UIImage *WCKAccentImage(NSString *symbolName) {
+    UIImage *symbol = symbolName.length ? [UIImage systemImageNamed:symbolName] : nil;
+    return [symbol imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
-
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        _iconView = [[UIImageView alloc] initWithImage:WCKTileImage(@"shield.fill",
-            UIColor.systemGreenColor, @"W", 64)];
-        [self addSubview:_iconView];
-        _nameLabel = [UILabel new];
-        _nameLabel.text = @"WeChatKit";
-        _nameLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightBold];
-        _nameLabel.textColor = UIColor.labelColor;
-        [self addSubview:_nameLabel];
-        _subtitleLabel = [UILabel new];
-        _subtitleLabel.text = @"微信界面小工具";
-        _subtitleLabel.font = [UIFont systemFontOfSize:14];
-        _subtitleLabel.textColor = UIColor.secondaryLabelColor;
-        [self addSubview:_subtitleLabel];
-        _pillLabel = [UILabel new];
-        _pillLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-        _pillLabel.textAlignment = NSTextAlignmentCenter;
-        _pillLabel.layer.cornerRadius = 13;
-        _pillLabel.layer.masksToBounds = YES;
-        [self addSubview:_pillLabel];
-    }
-    return self;
-}
-
-- (void)setPillText:(NSString *)text highlighted:(BOOL)highlighted {
-    self.pillLabel.text = text;
-    if (highlighted) {
-        self.pillLabel.textColor = UIColor.systemGreenColor;
-        self.pillLabel.backgroundColor = [UIColor.systemGreenColor colorWithAlphaComponent:0.12];
-    } else {
-        self.pillLabel.textColor = UIColor.secondaryLabelColor;
-        self.pillLabel.backgroundColor = UIColor.systemGray5Color;
-    }
-    [self setNeedsLayout];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGFloat width = self.bounds.size.width;
-    CGFloat pad = 20, icon = 64, gap = 12;
-    _iconView.frame = CGRectMake(pad, 12, icon, icon);
-    CGFloat textX = pad + icon + gap;
-    CGFloat textW = width - pad - textX;
-    _nameLabel.frame = CGRectMake(textX, 14, textW, 28);
-    _subtitleLabel.frame = CGRectMake(textX, 44, textW, 20);
-    CGSize textSize = [self.pillLabel.text sizeWithAttributes:
-        @{ NSFontAttributeName: self.pillLabel.font }];
-    _pillLabel.frame = CGRectMake(textX, 84, textSize.width + 24, 26);
-}
-
-@end
 
 static NSDictionary<NSString *, id> *WCKCornerSwitchRow(NSString *key, NSString *title, NSString *help) {
     return @{ @"type": @"switch", @"key": key, @"title": title, @"help": help };
@@ -260,7 +174,6 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
 @property (nonatomic, strong) WCKSettings *settings;
 @property (nonatomic, copy) NSDictionary<NSString *, NSString *> *statuses;
 @property (nonatomic, strong) UINavigationBar *standaloneBar;
-@property (nonatomic, strong) WCKSettingsHeroView *heroView;
 - (instancetype)initWithSettings:(WCKSettings *)settings;
 @end
 
@@ -283,9 +196,10 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
-    self.tableView.estimatedRowHeight = 60;
-    // One card per section, no hairlines inside it, as in the reference page.
-    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
+    self.tableView.estimatedRowHeight = 72;
+    // Cards with hairlines between rows, as in the reference page: the
+    // default separator style draws them inside each card only.
+    self.tableView.sectionHeaderTopPadding = 6;
     self.edgesForExtendedLayout = UIRectEdgeNone;
     self.extendedLayoutIncludesOpaqueBars = NO;
     self.tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentAutomatic;
@@ -314,13 +228,9 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         self.presentingViewController != nil;
     self.navigationItem.rightBarButtonItem = modal ? [[UIBarButtonItem alloc] initWithTitle:@"Close"
         style:UIBarButtonItemStyleDone target:self action:@selector(close)] : nil;
-    if (!self.heroView) {
-        self.heroView = [[WCKSettingsHeroView alloc] initWithFrame:
-            CGRectMake(0, 0, self.tableView.bounds.size.width, 124)];
-        self.heroView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    }
-    CGFloat width = self.tableView.bounds.size.width;
+    // The reference home page has no header card: navigation, then sections.
     // Direct presentation has no navigation controller to render navigationItem.
+    CGFloat width = self.tableView.bounds.size.width;
     if (!nav) {
         if (!self.standaloneBar) {
             self.standaloneBar = [[UINavigationBar alloc] initWithFrame:
@@ -328,17 +238,11 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
             self.standaloneBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
         }
         self.standaloneBar.items = @[self.navigationItem];
-        UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 44 + 124)];
-        container.autoresizingMask = UIViewAutoresizingFlexibleWidth;
         self.standaloneBar.frame = CGRectMake(0, 0, width, 44);
-        self.heroView.frame = CGRectMake(0, 44, width, 124);
-        [container addSubview:self.standaloneBar];
-        [container addSubview:self.heroView];
-        self.tableView.tableHeaderView = container;
+        self.tableView.tableHeaderView = self.standaloneBar;
     } else {
         self.standaloneBar.items = @[];
-        self.heroView.frame = CGRectMake(0, 0, width, 124);
-        self.tableView.tableHeaderView = self.heroView;
+        self.tableView.tableHeaderView = nil;
     }
     [self refreshState];
 }
@@ -355,22 +259,6 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     NSDictionary *reported = WCKRuntimeStatuses();
     self.statuses = [reported isKindOfClass:NSDictionary.class] ? [reported copy] : @{};
     [self.tableView reloadData];
-    [self updateHeroPill];
-}
-
-// The pill counts implemented features actually switched on, never a promise.
-- (void)updateHeroPill {
-    if (!self.heroView) return;
-    BOOL master = [self.settings boolForKey:@"enabled"];
-    NSInteger total = 0, enabled = 0;
-    for (NSDictionary *row in WCKModuleRows()) {
-        if (!row[@"key"]) continue;
-        total += 1;
-        if ([self.settings boolForKey:row[@"key"]]) enabled += 1;
-    }
-    NSString *text = master ? [NSString stringWithFormat:@"已开启 %ld/%ld", (long)enabled, (long)total]
-                            : @"总开关关闭";
-    [self.heroView setPillText:text highlighted:master];
 }
 
 - (BOOL)isReady:(NSString *)moduleID {
@@ -387,8 +275,13 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     if (!row[@"key"]) return @"待实现，暂无可用开关";
     if (![self.settings boolForKey:@"enabled"]) return @"总开关关闭，当前不生效";
     BOOL feature = [self.settings boolForKey:row[@"key"]];
-    if ([self isReady:row[@"id"]]) return feature ? @"已开启" : @"已关闭";
-    return feature ? @"已保存开启，状态未确认" : @"已接入，当前关闭";
+    NSString *state = nil;
+    if ([self isReady:row[@"id"]]) state = feature ? @"已开启" : @"已关闭";
+    else state = feature ? @"已保存开启，状态未确认" : @"已接入，当前关闭";
+    // Reference subtitle pattern: state, then one line of what it does.
+    NSString *desc = row[@"desc"];
+    return [desc isKindOfClass:NSString.class] && desc.length ?
+        [state stringByAppendingFormat:@" · %@", desc] : state;
 }
 
 - (NSString *)statusForRow:(NSDictionary<NSString *, id> *)row {
@@ -450,11 +343,13 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     if (path.section == 0) {
         BOOL stored = [self.settings boolForKey:@"enabled"];
-        cell.imageView.image = WCKTileImage(@"power", UIColor.systemGreenColor, @"", 36);
+        cell.imageView.image = WCKAccentImage(@"power");
+        cell.imageView.tintColor = WCKAccentColor();
         cell.textLabel.text = @"启用 WeChatKit";
         cell.detailTextLabel.text = @"关闭后所有功能立即失效";
         UISwitch *toggle = [[UISwitch alloc] init];
         toggle.on = stored;
+        toggle.onTintColor = WCKAccentColor();
         toggle.enabled = YES;
         toggle.tag = 0;
         toggle.accessibilityIdentifier = @"wck.switch.enabled";
@@ -468,8 +363,8 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         // only a one-line state; the full diagnostic text moves to that page.
         NSDictionary<NSString *, id> *row = WCKModuleRows()[path.row];
         NSString *symbol = [row[@"icon"] isKindOfClass:NSString.class] ? row[@"icon"] : nil;
-        UIColor *tint = [row[@"tint"] isKindOfClass:UIColor.class] ? row[@"tint"] : UIColor.systemGrayColor;
-        cell.imageView.image = WCKTileImage(symbol, tint, row[@"title"], 36);
+        cell.imageView.image = WCKAccentImage(symbol);
+        cell.imageView.tintColor = WCKAccentColor();
         cell.textLabel.text = row[@"title"];
         cell.detailTextLabel.text = [self shortStatusForRow:row];
         if (row[@"key"]) {
@@ -563,9 +458,9 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         initWithSettings:self.settings
         featureID:featureID settingsKey:row[@"key"] title:row[@"title"]
         detail:detail extraRows:extra];
-    // Second-level pages share the first-level hero language: same icon tile.
+    // Second-level pages share the first-level language: same icon, same accent.
     detailPage.heroIconName = row[@"icon"];
-    detailPage.heroTintColor = row[@"tint"];
+    detailPage.heroTintColor = WCKAccentColor();
     return detailPage;
 }
 
