@@ -8,6 +8,8 @@ on:
       - fix/wechatkit-alpha6-svg-provenance-20261022
       # Temporary: let this toplimit branch compile on push. Drop before merge.
       - feat/wechatkit-toplimit-20261102
+      # Temporary: let this dy778-ui branch compile on push. Drop before merge.
+      - feat/wechatkit-dy778-ui-20261103
     paths:
       - 'wechat-kit/**'
       - '.github/workflows/build-wechatkit.yml'
