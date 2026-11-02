@@ -11,7 +11,7 @@ WeChatKit_FILES = src/WCKBootstrap.m src/WCKRuntime.m src/WCKPolicy.c \
     src/WCKSVG.m src/WCKReadAll.m src/WCKAlbumSheet.m src/WCKMomentsTime.m src/WCKVerifiedFeatures.m \
     src/WCKEntryRegistry.m src/WCKEntryUI.m src/WCKHostIdentity.m src/WCKSVGSelection.m \
     src/WCKSVGPalette.m src/WCKSVGColorViewController.m src/WCKFeatureDetailViewController.m \
-    src/WCKCorners.m src/WCKDecoration.m
+    src/WCKCorners.m src/WCKDecoration.m src/WCKTopLimit.m
 WeChatKit_FRAMEWORKS = Foundation UIKit CoreGraphics
 WeChatKit_CFLAGS = -fobjc-arc -Isrc -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-deprecated-declarations

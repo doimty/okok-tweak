@@ -41,7 +41,7 @@ class SettingsStyleContract(unittest.TestCase):
     def test_every_module_row_has_an_icon(self):
         rows = self.vm.split("rows = @[", 1)[1].split("];", 1)[0]
         matches = list(re.finditer(r'@"id": @"([^"]+)"', rows))
-        self.assertEqual(len(matches), 13)
+        self.assertEqual(len(matches), 14)
         for i, match in enumerate(matches):
             end = matches[i + 1].start() if i + 1 < len(matches) else len(rows)
             block = rows[match.start():end]

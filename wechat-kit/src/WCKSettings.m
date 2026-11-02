@@ -60,6 +60,11 @@ static NSDictionary<NSString *, id> *WCKDefaults(void) {
         d[@"globalCornerCustomExcludedVCClassNames"] = @"";
         d[@"mainFramePinnedTopSpacing"] = @8.0;
         d[@"mainFrameBelowPinnedSpacing"] = @8.0;
+        // Pinned-session limit: off by default, so the host value is untouched
+        // until the user explicitly enables it. 9 matches the reference
+        // tweak's documented default; the number itself is just a count.
+        d[@"topLimitEnabled"] = @NO;
+        d[@"topLimitCount"] = @9;
         // List decoration images: off and folder-less by default, so nothing
         // draws until the user explicitly picks a folder.
         d[@"decorationEnabled"] = @NO;
@@ -102,6 +107,14 @@ static id WCKValidatedValue(NSString *key, id value) {
             double alpha = [value doubleValue];
             if (!isfinite(alpha)) return nil;
             return @(MIN(1.0, MAX(0.2, alpha)));
+        }
+        // A pinned-session count is a plain count, not a corner radius: it has
+        // its own 1-30 range and must reject booleans like any other number.
+        if ([key isEqualToString:@"topLimitCount"]) {
+            if (isBoolean) return nil;
+            double number = [value doubleValue];
+            if (!isfinite(number)) return nil;
+            return @(MIN(30.0, MAX(1.0, number)));
         }
         // Decoration geometry has its own ranges: a negative X offset and a
         // fractional scale cannot go through the 0-based corner clamp below.

@@ -35,7 +35,9 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKModuleRows(void) {
             @{@"id": @"repeatLabel", @"title": @"消息复读标签", @"note": @"标签含义待确认",
               @"icon": @"repeat", @"tint": UIColor.systemBlueColor},
             @{@"id": @"groupLabels", @"title": @"群聊标签", @"note": @"标签含义待确认",
-              @"icon": @"person.2", @"tint": UIColor.systemGreenColor}
+              @"icon": @"person.2", @"tint": UIColor.systemGreenColor},
+            @{@"id": @"topLimit", @"title": @"置顶数量限制", @"key": @"topLimitEnabled",
+              @"icon": @"pin.fill", @"tint": UIColor.systemOrangeColor}
         ];
     });
     return rows;
@@ -422,7 +424,7 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @[@"总开关", @"功能状态（13 项）"][section];
+    return @[@"总开关", @"功能状态（14 项）"][section];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -529,6 +531,8 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         return @"聊天页半屏相册会尝试设置微信实验开关；不同版本可能忽略该开关，行为未保证。";
     if ([featureID isEqualToString:@"corners"])
         return @"按 WCR 的具体功能分别开关：页面卡片、搜索框、输入框、顶栏、工具栏、菜单、聊天内容、系统弹窗、头像和资料卡等互不共用开关。全局卡片参数只作用于卡片路径；组件半径独立保存。源码证据显示 WCR 不是把所有 UIView 按类名粗分。";
+    if ([featureID isEqualToString:@"topLimit"])
+        return @"限制首页会话列表可置顶的会话数量，1–30，默认 9；关闭后恢复微信默认。";
     return @"";
 }
 
@@ -541,6 +545,12 @@ static NSArray<NSDictionary<NSString *, id> *> *WCKCornerExtraRows(void) {
         extra = @[@{@"key": @"momentsFormat", @"title": @"时间格式",
                     @"help": @"使用日期格式，1–128 字符。例如 yyyy-MM-dd HH:mm:ss。"}];
     else if ([featureID isEqualToString:@"corners"]) extra = WCKCornerExtraRows();
+    else if ([featureID isEqualToString:@"topLimit"]) extra = @[
+        @{@"type": @"header", @"title": @"置顶数量",
+          @"help": @"开启后，首页会话列表最多置顶这么多会话；关闭后恢复微信默认。"},
+        @{@"type": @"slider", @"key": @"topLimitCount", @"title": @"最多置顶会话",
+          @"min": @1, @"max": @30,
+          @"help": @"1 到 30；默认 9。滑杆松开后保存为整数。"}];
     // The list row now shows one line only; the full diagnostic text lives
     // here, in the detail page's description, so nothing is lost.
     NSString *detail = [self detailForFeatureID:featureID];

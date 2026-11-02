@@ -48,6 +48,7 @@ jobs:
           python3 tests/test_svgcolor_contract.py
           python3 tests/test_corners_contract.py
           python3 tests/test_settings_style_contract.py
+          python3 tests/test_toplimit_contract.py
       - name: Native production Hook installer and named mutations
         working-directory: wechat-kit
         run: |

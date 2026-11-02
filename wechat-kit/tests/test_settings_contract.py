@@ -91,13 +91,13 @@ class SettingsContract(unittest.TestCase):
         self.assertIn("com.doimty.wechatkit.plist", self.m)
         self.assertIn("NSLibraryDirectory", self.m)
 
-    def test_all_thirteen_modules(self):
+    def test_all_fourteen_modules(self):
         rows = self.vm.split("rows = @[", 1)[1].split("];", 1)[0]
         ids = re.findall(r'@"id": @"([^"]+)"', rows)
         self.assertEqual(ids, ["toolbar", "keyboardSwipe", "friendRank", "readAll",
                                "cleanUI", "corners", "momentsTime", "albumSheet",
                                "noHotUpdate", "topLabels", "svgTint", "repeatLabel",
-                               "groupLabels"])
+                               "groupLabels", "topLimit"])
         self.assertIn("标签含义待确认", rows)
         self.assertNotIn("会话分组", self.vm)
         self.assertNotIn("底栏标题", self.vm)

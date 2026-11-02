@@ -9,6 +9,7 @@ __attribute__((constructor)) static void WCKStart(void) {
         // Entry is initialized first and has no feature/master-switch dependency.
         WCKInstallEntryPoints();
         WCKInstallKeyboard(); WCKInstallSVG(); WCKInstallVerifiedFeatures();
+        WCKInstallTopLimit();
         // Retry after the window exists: late-loaded cell classes get picked up.
         WCKInstallCorners();
         // Bounded late-image retries, not a perpetual polling loop.
@@ -24,6 +25,7 @@ __attribute__((constructor)) static void WCKStart(void) {
                 queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
                     WCKInstallEntryPoints();
                     WCKInstallCornersLate();
+                    WCKInstallTopLimit();
                 }];
     });
 }

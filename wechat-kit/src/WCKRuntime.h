@@ -28,6 +28,7 @@ FOUNDATION_EXPORT void WCKInstallAlbumSheet(void);
 FOUNDATION_EXPORT void WCKInstallMomentsTime(void);
 FOUNDATION_EXPORT void WCKInstallVerifiedFeatures(void);
 FOUNDATION_EXPORT void WCKInstallCorners(void);
+FOUNDATION_EXPORT void WCKInstallTopLimit(void);
 // Retry once for cell classes that only appear after launch (home list).
 FOUNDATION_EXPORT void WCKInstallCornersLate(void);
 FOUNDATION_EXPORT void WCKRefreshCorners(void);
